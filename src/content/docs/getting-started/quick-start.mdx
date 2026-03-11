@@ -1,0 +1,74 @@
+---
+title: Quick Start
+description: Start with local HLS generation, then switch to Cloudinary when you need hosted delivery.
+---
+
+## Local Processing
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function main() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "local",
+        baseDir: "./output",
+      },
+    },
+    ["1080", "720", "480"],
+  );
+
+  const result = await sdk.processLocal("./samples/input.mp4");
+
+  console.log(result.variants[0].path);
+}
+
+main().catch(console.error);
+```
+
+The generated output will be written into a per-run UUID folder under your configured `baseDir`.
+
+## Cloudinary Processing
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function main() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "cloudinary",
+        baseDir: "./output",
+        credentials: {
+          cloudName: "your-cloud-name",
+          apiKey: "your-api-key",
+          apiSecret: "your-api-secret",
+        },
+      },
+    },
+    ["720", "480", "360"],
+  );
+
+  const masterUrl = await sdk.processCloudinary("./samples/input.mp4");
+
+  console.log(masterUrl);
+}
+
+main().catch(console.error);
+```
+
+## What You Get Back
+
+- `processLocal()` returns a `ProcessResult` and an internal output directory used during the run.
+- `processCloudinary()` returns the `secure_url` for `master.m3u8` only.
+
+## Resolution Selection
+
+Pass a string array of output levels when constructing the SDK:
+
+```ts
+["1080", "720", "480", "360"];
+```
+
+If you pass an empty array, the SDK defaults to `"720"`.

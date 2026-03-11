@@ -1,0 +1,63 @@
+---
+title: Presets
+description: Use the exported HLS profile and resolution maps to understand the built-in output targets.
+---
+
+## `HLS_PROFILES`
+
+```ts
+{
+  "1080": {
+    height: 1080,
+    bitrate: "5000k",
+    maxrate: "5350k",
+    bufsize: "7500k",
+    audio: "192k",
+  },
+  "720": {
+    height: 720,
+    bitrate: "2800k",
+    maxrate: "2996k",
+    bufsize: "4200k",
+    audio: "128k",
+  },
+  "480": {
+    height: 480,
+    bitrate: "1400k",
+    maxrate: "1498k",
+    bufsize: "2100k",
+    audio: "128k",
+  },
+  "360": {
+    height: 360,
+    bitrate: "800k",
+    maxrate: "856k",
+    bufsize: "1200k",
+    audio: "96k",
+  },
+  "240": {
+    height: 240,
+    bitrate: "400k",
+    maxrate: "428k",
+    bufsize: "600k",
+    audio: "64k",
+  },
+}
+```
+
+## `VIDEO_RESOLUTIONS`
+
+```ts
+{
+  "1080": "1920:1080",
+  "720": "1280:720",
+  "480": "854:480",
+  "360": "640:360",
+}
+```
+
+## Notes
+
+- The exported profile table includes a `240` profile.
+- The exported resolution map currently includes `1080`, `720`, `480`, and `360`.
+- If you depend on `240` output, verify how your internal transcoding path consumes profiles versus resolution mappings.

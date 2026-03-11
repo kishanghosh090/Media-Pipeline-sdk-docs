@@ -1,0 +1,52 @@
+---
+title: Local Processing
+description: Understand the local HLS pipeline and the filesystem output it creates.
+---
+
+## Flow
+
+1. Validate storage configuration.
+2. Validate the incoming media path.
+3. Generate a UUID-based output directory under `config.storage.baseDir`.
+4. Transcode the video into HLS playlists and segments.
+5. Return the HLS master playlist path through the result variants.
+
+## Supported Input Formats
+
+- `.mp4`
+- `.mov`
+- `.mkv`
+
+## Example Result
+
+```ts
+{
+  type: "video",
+  variants: [
+    {
+      name: "hls",
+      path: "output/857c83e9-7854-45b6-a2e3-8ca5fd834a43/master.m3u8",
+    },
+  ],
+}
+```
+
+## Filesystem Layout
+
+```text
+output/
+└── <uuid>/
+    ├── master.m3u8
+    ├── variant_1080p.m3u8
+    ├── variant_720p.m3u8
+    ├── segment_720p_001.ts
+    ├── segment_720p_002.ts
+    └── ...
+```
+
+## Common Failure Cases
+
+- Unsupported file extension.
+- Missing `baseDir`.
+- Missing or broken ffmpeg installation.
+- File path is empty or whitespace.

@@ -1,0 +1,62 @@
+---
+title: Configuration
+description: Define the storage backend, output directory, credentials, and resolution targets.
+---
+
+## `PipelineConfig`
+
+```ts
+interface PipelineConfig {
+  storage: {
+    type: StorageType;
+    baseDir: string;
+    credentials?: CloudinaryCredentials | S3Credentials;
+  };
+}
+```
+
+## Local Configuration
+
+```ts
+const config = {
+  storage: {
+    type: "local",
+    baseDir: "./output",
+  },
+};
+```
+
+## Cloudinary Configuration
+
+```ts
+const config = {
+  storage: {
+    type: "cloudinary",
+    baseDir: "./output",
+    credentials: {
+      cloudName: "your-cloud-name",
+      apiKey: "your-api-key",
+      apiSecret: "your-api-secret",
+    },
+  },
+};
+```
+
+## Supported Storage Types in v2
+
+The type union includes more values, but validation currently accepts only:
+
+- `local`
+- `cloudinary`
+
+Any other storage type will fail validation in the current release.
+
+## Resolution Array
+
+Provide one or more string keys when creating the SDK instance:
+
+```ts
+const sdk = new MediaPipelineSDK(config, ["1080", "720", "480"]);
+```
+
+If no resolutions are provided, the SDK falls back to `"720"`.

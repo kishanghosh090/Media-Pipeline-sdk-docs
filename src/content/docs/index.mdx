@@ -1,0 +1,89 @@
+---
+title: Overview
+description: Process video into HLS outputs locally or upload the final stream package to Cloudinary.
+template: splash
+hero:
+  tagline: Ship HLS processing without rebuilding the pipeline yourself.
+  actions:
+    - text: Get Started
+      link: /getting-started/installation/
+      icon: right-arrow
+    - text: GitHub Repository
+      link: https://github.com/kishanghosh090/Media-Pipeline-sdk
+      variant: minimal
+    - text: API Reference
+      link: /reference/api/
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+<p class="expressive-lead">
+  Media Pipeline SDK is a TypeScript package for converting source video into an
+  HLS package, producing a master playlist plus variant playlists and segment
+  files, and optionally pushing that package to Cloudinary under a predictable
+  folder layout.
+</p>
+
+Source code lives on
+[GitHub](https://github.com/kishanghosh090/Media-Pipeline-sdk).
+
+<CardGrid stagger>
+  <Card title="Local HLS generation">
+    Convert .mp4, .mov, and .mkv inputs into a master.m3u8 playlist with variant
+    outputs stored under your configured local directory.
+  </Card>
+  <Card title="Cloudinary delivery">
+    Upload generated HLS playlists and segments to Cloudinary under
+    `mediapipeline/{videoId}/` and return the master playlist URL.
+  </Card>
+  <Card title="Built-in presets">
+    Use exported HLS bitrate profiles and resolution mappings instead of
+    maintaining ffmpeg settings manually.
+  </Card>
+  <Card title="Operational safeguards">
+    Uploads use batched concurrency, timeout handling, and exponential retry
+    logic for transient Cloudinary failures.
+  </Card>
+</CardGrid>
+
+## What This SDK Handles
+
+- Validation of supported storage configuration.
+- Video processing for `.mp4`, `.mov`, and `.mkv` files.
+- HLS output generation with a master playlist and multiple variants.
+- Optional Cloudinary publishing for generated HLS assets.
+
+## Output Shape
+
+Local processing returns a structured result:
+
+```ts
+{
+  type: "video",
+  variants: [
+    {
+      name: "hls",
+      path: "output/<uuid>/master.m3u8",
+    },
+  ],
+}
+```
+
+Cloudinary processing returns a single string:
+
+```ts
+"https://res.cloudinary.com/<cloud-name>/raw/upload/.../mediapipeline/<uuid>/master.m3u8";
+```
+
+## In Scope
+
+- Local storage output.
+- Cloudinary upload workflow.
+- Exported config helpers and preset maps.
+
+## Not In Scope
+
+- Browser-side transcoding.
+- Direct S3, GCS, Azure, or Cloudflare upload implementations.
+- Image transformation pipelines.

@@ -1,0 +1,55 @@
+---
+title: Cloudinary Uploads
+description: Publish generated HLS playlists and segments to Cloudinary and return the master playlist URL.
+---
+
+## Requirements
+
+- `storage.type` must be `cloudinary`.
+- `storage.baseDir` must still be set because HLS output is created locally before upload.
+- `storage.credentials` must include `cloudName`, `apiKey`, and `apiSecret`.
+
+## Returned Value
+
+`processCloudinary()` returns a single URL string for the uploaded `master.m3u8` file.
+
+```ts
+const masterUrl = await sdk.processCloudinary("./input.mp4");
+```
+
+## Cloudinary Folder Structure
+
+Every run uploads into the following path structure:
+
+```text
+mediapipeline/<videoId>/<filename>
+```
+
+Example:
+
+```text
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/master.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/variant_720p.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/segment_240p_001.ts
+```
+
+## Upload Behavior
+
+- Resource type: `raw`
+- Timeout per file: `120000` ms
+- Max concurrent uploads per batch: `4`
+- Retry attempts: `3`
+- Exponential backoff: `1000`, `2000`, `4000` ms
+
+## Retryable Failures
+
+The upload helper retries when Cloudinary responds with:
+
+- `429`
+- `499`
+- Any `5xx` status code
+- `TimeoutError`
+
+## Cleanup Behavior
+
+The SDK attempts to remove the temporary local HLS output directory after a successful Cloudinary upload when cleanup is enabled.

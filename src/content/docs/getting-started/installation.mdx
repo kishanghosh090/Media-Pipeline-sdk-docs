@@ -1,0 +1,59 @@
+---
+title: Installation
+description: Install the SDK and the system requirements needed for local HLS generation.
+---
+
+## Package Installation
+
+```bash
+npm install mediapipeline-sdk
+```
+
+## Runtime Requirements
+
+- Node.js 18 or newer.
+- npm.
+- ffmpeg installed and available on your system PATH.
+
+## Install ffmpeg
+
+### macOS
+
+```bash
+brew install ffmpeg
+```
+
+### Ubuntu or Debian
+
+```bash
+sudo apt update
+sudo apt install -y ffmpeg
+```
+
+## Verify ffmpeg
+
+```bash
+ffmpeg -version
+```
+
+## Optional Cloudinary Setup
+
+Cloudinary is only required when you want the SDK to upload generated HLS output instead of returning a local path.
+
+```ts
+const credentials = {
+  cloudName: "your-cloud-name",
+  apiKey: "your-api-key",
+  apiSecret: "your-api-secret",
+};
+```
+
+## Documentation Site Commands
+
+If you want to run this documentation app locally after scaffolding it inside `/docs`:
+
+```bash
+cd docs
+npm install
+npm run dev
+```

@@ -1,0 +1,94 @@
+---
+title: API
+description: Public classes, functions, and return values exposed by the SDK entrypoint.
+---
+
+## Exports
+
+```ts
+export { MediaPipelineSDK } from "./core/pipeline";
+export { HLS_PROFILES } from "./utils/hlsProfiles";
+export { VIDEO_RESOLUTIONS } from "./utils/resolutions";
+export * from "./types/media.types";
+export { validateConfig } from "./core/config";
+```
+
+## `new MediaPipelineSDK(config, resolutions, isCleanTheOriginalFileFromLocalPath?)`
+
+Creates a pipeline instance.
+
+### Parameters
+
+- `config`: A `PipelineConfig` object.
+- `resolutions`: Array of target resolution keys like `"1080"`, `"720"`, `"480"`, or `"360"`.
+- `isCleanTheOriginalFileFromLocalPath`: Optional cleanup flag for source and generated local files.
+
+## `sdk.processLocal(filePath)`
+
+Generate HLS assets locally.
+
+### Returns
+
+An object that includes the processing result and the generated output directory.
+
+```ts
+{
+  type: "video",
+  variants: [{ name: "hls", path: "output/<uuid>/master.m3u8" }],
+  outputDir: "output/<uuid>",
+}
+```
+
+## `sdk.processCloudinary(filePath)`
+
+Generate HLS assets locally, upload the HLS package to Cloudinary, and return the master playlist URL.
+
+### Returns
+
+```ts
+string;
+```
+
+## `validateConfig(config)`
+
+Validates that the storage configuration exists and that the current SDK version is only using supported storage types.
+
+## Exported Types
+
+```ts
+type MediaType = "video" | "image";
+
+type StorageType =
+  | "local"
+  | "s3"
+  | "gcs"
+  | "azure"
+  | "cloudflare"
+  | "cloudinary";
+
+type VideoResolution = "1080" | "720" | "480" | "360";
+
+interface MediaVariant {
+  name: string;
+  path: string;
+}
+
+interface ProcessResult {
+  type: MediaType;
+  variants: MediaVariant[];
+}
+
+interface CloudinaryCredentials {
+  cloudName: string;
+  apiKey: string;
+  apiSecret: string;
+}
+
+interface PipelineConfig {
+  storage: {
+    type: StorageType;
+    baseDir: string;
+    credentials?: CloudinaryCredentials | S3Credentials;
+  };
+}
+```

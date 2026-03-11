@@ -1,0 +1,40 @@
+---
+title: Troubleshooting
+description: Diagnose the most common setup and runtime issues for ffmpeg and Cloudinary uploads.
+---
+
+## `Unsupported media type`
+
+The SDK only accepts `.mp4`, `.mov`, and `.mkv` as input.
+
+## `base directory is required`
+
+Set `config.storage.baseDir` even for Cloudinary flows. Uploads still depend on a local temporary HLS directory before files are pushed remotely.
+
+## `Cloudinary cloud name is required` or credential errors
+
+Make sure all three credential fields are present:
+
+```ts
+credentials: {
+  cloudName: "...",
+  apiKey: "...",
+  apiSecret: "...",
+}
+```
+
+## `Request Timeout` or HTTP `499`
+
+This usually indicates Cloudinary upload pressure or a long-running request. The SDK already uploads in small batches and retries transient timeout failures. If you still see repeated timeouts:
+
+- Reduce the number of generated variants.
+- Check your network stability.
+- Retry with a smaller source file to isolate whether the issue is payload size or environment-related.
+
+## `invalid file`
+
+This usually points to a malformed or incomplete generated HLS file. Confirm that local HLS generation completed successfully before upload and verify the generated `master.m3u8` and segment files exist in the output directory.
+
+## `ffmpeg: command not found`
+
+Install ffmpeg and make sure it is available on your shell PATH before starting the Node.js process.
