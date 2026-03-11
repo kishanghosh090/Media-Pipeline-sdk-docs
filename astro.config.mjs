@@ -11,7 +11,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com",
+          href: "https://github.com/kishanghosh090/Media-Pipeline-sdk",
         },
       ],
       customCss: ["./src/styles/custom.css"],
