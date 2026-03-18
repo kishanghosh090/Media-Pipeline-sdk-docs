@@ -1,0 +1,95 @@
+---
+title: S3 Uploads
+description: Publish generated HLS playlists and segments to S3 and return a signed playback URL.
+---
+
+## Requirements
+
+- `storage.type` must be `s3`.
+- `storage.baseDir` must be set because HLS output is created locally before upload.
+- `storage.credentials` must include `accessKeyId`, `secretAccessKey`, `region`, `bucket`, and `folderName`.
+
+## Returned Value
+
+`processS3()` returns a signed URL string for `signed/master.m3u8`.
+
+```ts
+const playbackUrl = await sdk.processS3("./input.mp4");
+```
+
+## Dummy Example
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function runDummyS3Flow() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "s3",
+        baseDir: "./output",
+        credentials: {
+          accessKeyId: "DUMMY_ACCESS_KEY",
+          secretAccessKey: "DUMMY_SECRET_KEY",
+          region: "us-east-1",
+          bucket: "demo-hls-bucket",
+          folderName: "demo-media",
+        },
+      },
+    },
+    ["720"],
+  );
+
+  const playbackUrl = await sdk.processS3("./samples/demo.mp4");
+  console.log("Signed playback URL:", playbackUrl);
+}
+
+runDummyS3Flow().catch(console.error);
+```
+
+## Required Credentials
+
+```ts
+interface S3Credentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  bucket: string;
+  folderName: string;
+}
+```
+
+## S3 Key Layout
+
+Each run uploads to:
+
+```text
+<folderName>/<videoId>/
+```
+
+The SDK uploads generated HLS files and writes signed playlist variants under `signed/`.
+
+Example:
+
+```text
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/master.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/variant_720p.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/segment_720p_001.ts
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/signed/master.m3u8
+```
+
+## Signed Playlist Behavior
+
+- Playlist lines starting with `#` are preserved.
+- Empty lines are preserved.
+- HTTP and HTTPS links are preserved as-is.
+- Relative media paths are converted to signed S3 URLs.
+- Nested playlist references are rewritten to the `signed/` path so chained playlists also resolve with signed links.
+
+## Expiration Window
+
+Signed links are time-limited and currently generated with a short expiration window (5 minutes). If playback starts after expiry, request a new playback URL.
+
+## Cleanup Behavior
+
+When local cleanup is enabled, the temporary output directory is removed after upload succeeds. On failure, the SDK still attempts cleanup before rethrowing the original error.

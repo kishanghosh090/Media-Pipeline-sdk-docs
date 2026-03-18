@@ -49,6 +49,16 @@ Generate HLS assets locally, upload the HLS package to Cloudinary, and return th
 string;
 ```
 
+## `sdk.processS3(filePath)`
+
+Generate HLS assets locally, upload playlists and segments to S3, create signed playlist variants under `signed/`, and return a signed playback URL.
+
+### Returns
+
+```ts
+string;
+```
+
 ## `validateConfig(config)`
 
 Validates that the storage configuration exists and that the current SDK version is only using supported storage types.
@@ -82,6 +92,14 @@ interface CloudinaryCredentials {
   cloudName: string;
   apiKey: string;
   apiSecret: string;
+}
+
+interface S3Credentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  bucket: string;
+  folderName: string;
 }
 
 interface PipelineConfig {

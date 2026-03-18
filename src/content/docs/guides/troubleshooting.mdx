@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Diagnose the most common setup and runtime issues for ffmpeg and Cloudinary uploads.
+description: Diagnose the most common setup and runtime issues for ffmpeg, Cloudinary uploads, and S3 uploads.
 ---
 
 ## `Unsupported media type`
@@ -23,6 +23,22 @@ credentials: {
 }
 ```
 
+## `S3 access key id is required` or other S3 credential errors
+
+Make sure all five S3 credential fields are present and non-empty:
+
+```ts
+credentials: {
+  accessKeyId: "...",
+  secretAccessKey: "...",
+  region: "...",
+  bucket: "...",
+  folderName: "...",
+}
+```
+
+Also make sure `storage.type` is `"s3"` before calling `processS3()`.
+
 ## `Request Timeout` or HTTP `499`
 
 This usually indicates Cloudinary upload pressure or a long-running request. The SDK already uploads in small batches and retries transient timeout failures. If you still see repeated timeouts:
@@ -34,6 +50,10 @@ This usually indicates Cloudinary upload pressure or a long-running request. The
 ## `invalid file`
 
 This usually points to a malformed or incomplete generated HLS file. Confirm that local HLS generation completed successfully before upload and verify the generated `master.m3u8` and segment files exist in the output directory.
+
+## S3 playback URL expires too quickly
+
+`processS3()` returns signed URLs with a short expiration window. Start playback soon after requesting the URL, or call `processS3()` again to generate a fresh signed URL when needed.
 
 ## `ffmpeg: command not found`
 

@@ -42,14 +42,33 @@ const config = {
 };
 ```
 
+## S3 Configuration
+
+```ts
+const config = {
+  storage: {
+    type: "s3",
+    baseDir: "./output",
+    credentials: {
+      accessKeyId: "your-access-key-id",
+      secretAccessKey: "your-secret-access-key",
+      region: "your-region",
+      bucket: "your-bucket",
+      folderName: "mediapipeline",
+    },
+  },
+};
+```
+
 ## Supported Storage Types in v2
 
-The type union includes more values, but validation currently accepts only:
+The type union includes more values, but this release validates and supports:
 
 - `local`
 - `cloudinary`
+- `s3`
 
-Any other storage type will fail validation in the current release.
+Other storage values in the type union are reserved and currently fail validation.
 
 ## Resolution Array
 

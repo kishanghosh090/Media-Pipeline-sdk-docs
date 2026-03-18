@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Process video into HLS outputs locally or upload the final stream package to Cloudinary.
+description: Process video into HLS outputs locally or upload the final stream package to Cloudinary or S3.
 template: splash
 hero:
   tagline: Ship HLS processing without rebuilding the pipeline yourself.
@@ -22,7 +22,7 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
   Media Pipeline SDK is a TypeScript package for converting source video into an
   HLS package, producing a master playlist plus variant playlists and segment
   files, and optionally pushing that package to Cloudinary under a predictable
-  folder layout.
+  folder layout or to Amazon S3 with signed playback links.
 </p>
 
 <p>
@@ -41,6 +41,10 @@ Source code lives on
     Upload generated HLS playlists and segments to Cloudinary under
     `mediapipeline/{videoId}/` and return the master playlist URL.
   </Card>
+  <Card title="S3 delivery with signed playback">
+    Upload generated HLS outputs to S3, generate signed playlists and signed
+    segment links, and return a time-limited playback URL.
+  </Card>
   <Card title="Built-in presets">
     Use exported HLS bitrate profiles and resolution mappings instead of
     maintaining ffmpeg settings manually.
@@ -57,6 +61,7 @@ Source code lives on
 - Video processing for `.mp4`, `.mov`, and `.mkv` files.
 - HLS output generation with a master playlist and multiple variants.
 - Optional Cloudinary publishing for generated HLS assets.
+- Optional S3 publishing with signed playback URLs.
 
 ## Output Shape
 
@@ -80,14 +85,21 @@ Cloudinary processing returns a single string:
 "https://res.cloudinary.com/<cloud-name>/raw/upload/.../mediapipeline/<uuid>/master.m3u8";
 ```
 
+S3 processing also returns a single string:
+
+```ts
+"https://<bucket>.s3.<region>.amazonaws.com/<folder>/<uuid>/signed/master.m3u8?...";
+```
+
 ## In Scope
 
 - Local storage output.
 - Cloudinary upload workflow.
+- S3 upload workflow.
 - Exported config helpers and preset maps.
 
 ## Not In Scope
 
 - Browser-side transcoding.
-- Direct S3, GCS, Azure, or Cloudflare upload implementations.
+- Direct GCS, Azure, or Cloudflare upload implementations.
 - Image transformation pipelines.

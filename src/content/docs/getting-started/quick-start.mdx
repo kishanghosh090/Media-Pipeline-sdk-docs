@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Start with local HLS generation, then switch to Cloudinary when you need hosted delivery.
+description: Start with local HLS generation, then switch to Cloudinary or S3 when you need hosted delivery.
 ---
 
 ## Local Processing
@@ -58,10 +58,42 @@ async function main() {
 main().catch(console.error);
 ```
 
+## S3 Processing
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function main() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "s3",
+        baseDir: "./output",
+        credentials: {
+          accessKeyId: "your-access-key-id",
+          secretAccessKey: "your-secret-access-key",
+          region: "your-region",
+          bucket: "your-bucket",
+          folderName: "mediapipeline",
+        },
+      },
+    },
+    ["720", "480", "360"],
+  );
+
+  const playbackUrl = await sdk.processS3("./samples/input.mp4");
+
+  console.log(playbackUrl);
+}
+
+main().catch(console.error);
+```
+
 ## What You Get Back
 
 - `processLocal()` returns a `ProcessResult` and an internal output directory used during the run.
 - `processCloudinary()` returns the `secure_url` for `master.m3u8` only.
+- `processS3()` returns a signed playback URL for `signed/master.m3u8`.
 
 ## Resolution Selection
 

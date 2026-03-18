@@ -28,6 +28,7 @@ export default defineConfig({
           items: [
             { label: "Local Processing", slug: "guides/local-processing" },
             { label: "Cloudinary Uploads", slug: "guides/cloudinary-upload" },
+            { label: "S3 Uploads", slug: "guides/s3-upload" },
             {
               label: "Troubleshooting",
               slug: "guides/troubleshooting",
