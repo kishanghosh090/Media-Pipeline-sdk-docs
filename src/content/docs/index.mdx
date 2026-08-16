@@ -1,105 +1,183 @@
 ---
-title: Overview
+title: Media Pipeline SDK
 description: Process video into HLS outputs locally or upload the final stream package to Cloudinary or S3.
 template: splash
 hero:
-  tagline: Ship HLS processing without rebuilding the pipeline yourself.
   actions:
     - text: Get Started
       link: /getting-started/installation/
       icon: right-arrow
-    - text: GitHub Repository
-      link: https://github.com/kishanghosh090/Media-Pipeline-sdk
-      variant: minimal
     - text: API Reference
       link: /reference/api/
       variant: minimal
+    - text: GitHub
+      link: https://github.com/kishanghosh090/Media-Pipeline-sdk
+      variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
-
-<p class="expressive-lead">
-  Media Pipeline SDK is a TypeScript package for converting source video into an
-  HLS package, producing a master playlist plus variant playlists and segment
-  files, and optionally pushing that package to Cloudinary under a predictable
+<div class="home-lead">
+  Media Pipeline SDK is a TypeScript package for converting source video into
+  an HLS package — producing a master playlist, variant playlists, and segment
+  files — and optionally pushing that package to Cloudinary under a predictable
   folder layout or to Amazon S3 with signed playback links.
-</p>
+</div>
 
-<p>
-  Trusted by <strong>100+ developers</strong> who use it every day.
-</p>
+<section class="home-section">
+  <h2 class="home-section-title">Built for the media pipeline</h2>
+  <div class="capability-list">
+    <div class="capability">
+      <div class="capability-head">
+        <span class="capability-accent"></span>
+        <strong>Local HLS generation</strong>
+      </div>
+      <p>
+        Convert `.mp4`, `.mov`, and `.mkv` inputs into a `master.m3u8` playlist
+        with variant outputs stored under your configured local directory.
+      </p>
+      <a class="capability-link" href="/guides/local-processing/">Local Processing →</a>
+    </div>
+    <div class="capability">
+      <div class="capability-head">
+        <span class="capability-accent"></span>
+        <strong>Cloudinary delivery</strong>
+      </div>
+      <p>
+        Upload generated HLS playlists and segments to Cloudinary under
+        `mediapipeline/{videoId}/` and return the master playlist URL.
+      </p>
+      <a class="capability-link" href="/guides/cloudinary-upload/">Cloudinary Uploads →</a>
+    </div>
+    <div class="capability">
+      <div class="capability-head">
+        <span class="capability-accent"></span>
+        <strong>S3 delivery with signed playback</strong>
+      </div>
+      <p>
+        Upload generated HLS outputs to S3, generate signed playlists and
+        signed segment links, and return a time-limited playback URL.
+      </p>
+      <a class="capability-link" href="/guides/s3-upload/">S3 Uploads →</a>
+    </div>
+    <div class="capability">
+      <div class="capability-head">
+        <span class="capability-accent"></span>
+        <strong>Built-in presets</strong>
+      </div>
+      <p>
+        Use exported HLS bitrate profiles and resolution mappings instead of
+        maintaining ffmpeg settings manually.
+      </p>
+      <a class="capability-link" href="/reference/presets/">View Presets →</a>
+    </div>
+  </div>
+</section>
 
-Source code lives on
-[GitHub](https://github.com/kishanghosh090/Media-Pipeline-sdk).
+<section class="home-section">
+  <h2 class="home-section-title">From video to playback</h2>
+  <div class="workflow-grid">
+    <div class="workflow-step">
+      <div class="workflow-num">01</div>
+      <div class="workflow-copy">
+        <strong>install</strong>
+        <code>npm install mediapipeline-sdk</code>
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="workflow-num">02</div>
+      <div class="workflow-copy">
+        <strong>configure</strong>
+        <code>local · cloudinary · s3</code>
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="workflow-num">03</div>
+      <div class="workflow-copy">
+        <strong>process</strong>
+        <code>sdk.processLocal() → HLS</code>
+      </div>
+    </div>
+    <div class="workflow-step">
+      <div class="workflow-num">04</div>
+      <div class="workflow-copy">
+        <strong>deliver</strong>
+        <code>Cloudinary URL · S3 signed URL</code>
+      </div>
+    </div>
+  </div>
+</section>
 
-<CardGrid stagger>
-  <Card title="Local HLS generation">
-    Convert .mp4, .mov, and .mkv inputs into a master.m3u8 playlist with variant
-    outputs stored under your configured local directory.
-  </Card>
-  <Card title="Cloudinary delivery">
-    Upload generated HLS playlists and segments to Cloudinary under
-    `mediapipeline/{videoId}/` and return the master playlist URL.
-  </Card>
-  <Card title="S3 delivery with signed playback">
-    Upload generated HLS outputs to S3, generate signed playlists and signed
-    segment links, and return a time-limited playback URL.
-  </Card>
-  <Card title="Built-in presets">
-    Use exported HLS bitrate profiles and resolution mappings instead of
-    maintaining ffmpeg settings manually.
-  </Card>
-  <Card title="Operational safeguards">
-    Uploads use batched concurrency, timeout handling, and exponential retry
-    logic for transient Cloudinary failures.
-  </Card>
-</CardGrid>
+<section class="home-section">
+  <h2 class="home-section-title">Get started</h2>
+  <div class="get-started-list">
+    <a class="get-started-item" href="/getting-started/installation/">
+      <span class="gs-title">Installation</span>
+      <span class="gs-desc">Install the SDK and prepare your environment with Node.js and ffmpeg.</span>
+    </a>
+    <a class="get-started-item" href="/getting-started/quick-start/">
+      <span class="gs-title">Quick Start</span>
+      <span class="gs-desc">Process your first video into HLS with local, Cloudinary, or S3 output.</span>
+    </a>
+    <a class="get-started-item" href="/reference/configuration/">
+      <span class="gs-title">Configuration</span>
+      <span class="gs-desc">Define the storage backend, output directory, credentials, and resolution targets.</span>
+    </a>
+    <a class="get-started-item" href="/reference/api/">
+      <span class="gs-title">API Reference</span>
+      <span class="gs-desc">Public classes, functions, and return values exposed by the SDK entrypoint.</span>
+    </a>
+  </div>
+</section>
 
-## What This SDK Handles
+<section class="home-section">
+  <h2 class="home-section-title">What the SDK handles</h2>
+  <div class="scope-grid">
+    <div class="scope-col">
+      <strong class="scope-title">In scope</strong>
+      <ul>
+        <li>Local storage output</li>
+        <li>Cloudinary upload workflow</li>
+        <li>S3 upload workflow</li>
+        <li>Exported config helpers and preset maps</li>
+      </ul>
+    </div>
+    <div class="scope-col">
+      <strong class="scope-title">Output shape</strong>
+      <div class="output-codes">
+        <code class="output-code">{`{ type: "video", variants: [...] }`}</code>
+        <code class="output-code dim">→ Cloudinary URL</code>
+        <code class="output-code dim">→ S3 signed URL</code>
+      </div>
+    </div>
+  </div>
+</section>
 
-- Validation of supported storage configuration.
-- Video processing for `.mp4`, `.mov`, and `.mkv` files.
-- HLS output generation with a master playlist and multiple variants.
-- Optional Cloudinary publishing for generated HLS assets.
-- Optional S3 publishing with signed playback URLs.
+<details class="home-more">
+  <summary>See the full API output shapes</summary>
 
-## Output Shape
+  Local processing returns a structured result:
 
-Local processing returns a structured result:
+  ```ts
+  {
+    type: "video",
+    variants: [
+      {
+        name: "hls",
+        path: "output/<uuid>/master.m3u8",
+      },
+    ],
+  }
+  ```
 
-```ts
-{
-  type: "video",
-  variants: [
-    {
-      name: "hls",
-      path: "output/<uuid>/master.m3u8",
-    },
-  ],
-}
-```
+  Cloudinary processing returns a single string:
 
-Cloudinary processing returns a single string:
+  ```ts
+  "https://res.cloudinary.com/<cloud-name>/raw/upload/.../mediapipeline/<uuid>/master.m3u8";
+  ```
 
-```ts
-"https://res.cloudinary.com/<cloud-name>/raw/upload/.../mediapipeline/<uuid>/master.m3u8";
-```
+  S3 processing also returns a single string:
 
-S3 processing also returns a single string:
+  ```ts
+  "https://<bucket>.s3.<region>.amazonaws.com/<folder>/<uuid>/signed/master.m3u8?...";
+  ```
 
-```ts
-"https://<bucket>.s3.<region>.amazonaws.com/<folder>/<uuid>/signed/master.m3u8?...";
-```
-
-## In Scope
-
-- Local storage output.
-- Cloudinary upload workflow.
-- S3 upload workflow.
-- Exported config helpers and preset maps.
-
-## Not In Scope
-
-- Browser-side transcoding.
-- Direct GCS, Azure, or Cloudflare upload implementations.
-- Image transformation pipelines.
+</details>

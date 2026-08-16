@@ -1,0 +1,188 @@
+---
+import MobileMenuToggle from "virtual:starlight/components/MobileMenuToggle";
+
+const { hasSidebar, entry } = Astro.locals.starlightRoute;
+
+// Determine which docs section is active based on the current route
+const sections = [
+  { label: "Docs", href: "/", isActive: entry.id === "index" || entry.id.startsWith("getting-started") },
+  { label: "Guides", href: "/guides/local-processing/", isActive: entry.id.startsWith("guides") },
+  { label: "Reference", href: "/reference/api/", isActive: entry.id.startsWith("reference") },
+];
+---
+
+<div class="page sl-flex">
+  <header class="header"><slot name="header" /></header>
+
+  <!-- Secondary docs navigation -->
+  {
+    hasSidebar && (
+      <nav class="docs-subnav print:hidden" aria-label="Documentation sections">
+        <div class="subnav-inner">
+          {sections.map((section) => (
+            <a
+              href={section.href}
+              class:list={["subnav-link", { active: section.isActive }]}
+            >
+              {section.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+    )
+  }
+
+  {
+    hasSidebar && (
+      <nav class="sidebar print:hidden" aria-label="Main">
+        <MobileMenuToggle />
+        <div id="starlight__sidebar" class="sidebar-pane">
+          <div class="sidebar-content sl-flex">
+            <slot name="sidebar" />
+          </div>
+        </div>
+      </nav>
+    )
+  }
+  <div class="main-frame"><slot /></div>
+</div>
+
+<style>
+  .page {
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .header {
+    z-index: var(--sl-z-index-navbar);
+    position: fixed;
+    inset-inline-start: 0;
+    inset-block-start: 0;
+    width: 100%;
+    height: var(--sl-nav-height);
+    border-bottom: 1px solid var(--sl-color-hairline-shade);
+    padding: var(--sl-nav-pad-y) var(--sl-nav-pad-x);
+    background-color: var(--sl-color-bg-nav);
+  }
+
+  :global([data-has-sidebar]) .header {
+    padding-inline-end: calc(var(--sl-nav-gap) + var(--sl-nav-pad-x) + var(--sl-menu-button-size));
+  }
+
+  .docs-subnav {
+    position: fixed;
+    z-index: calc(var(--sl-z-index-navbar) - 1);
+    top: calc(var(--sl-nav-height) - 1px);
+    inset-inline-start: 0;
+    width: 100%;
+    border-bottom: 1px solid var(--sl-color-hairline);
+    background-color: var(--sl-color-bg-nav);
+  }
+
+  .subnav-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    height: 2.5rem;
+    padding-inline: var(--sl-nav-pad-x);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .subnav-inner::-webkit-scrollbar {
+    display: none;
+  }
+
+  .subnav-link {
+    display: inline-flex;
+    align-items: center;
+    height: 100%;
+    padding-inline: 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.12s ease;
+  }
+
+  .subnav-link:hover,
+  .subnav-link:focus {
+    color: var(--sl-color-white);
+  }
+
+  .subnav-link.active {
+    color: var(--sl-color-accent-high);
+    border-bottom-color: var(--sl-color-accent);
+    font-weight: 550;
+  }
+
+  :root[data-theme="light"] .subnav-link.active {
+    color: var(--sl-color-accent);
+  }
+
+  .sidebar-pane {
+    visibility: var(--sl-sidebar-visibility, hidden);
+    position: fixed;
+    z-index: var(--sl-z-index-menu);
+    inset-block: var(--sl-nav-height) 0;
+    inset-inline-start: 0;
+    width: 100%;
+    background-color: var(--sl-color-black);
+    overflow-y: auto;
+  }
+
+  :global([aria-expanded="true"]) ~ .sidebar-pane {
+    --sl-sidebar-visibility: visible;
+  }
+
+  .sidebar-content {
+    height: 100%;
+    min-height: max-content;
+    padding: 1rem var(--sl-sidebar-pad-x) 0;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  @media (min-width: 50rem) {
+    .sidebar-content::after {
+      content: "";
+      padding-bottom: 1px;
+    }
+  }
+
+  .main-frame {
+    padding-top: calc(var(--sl-nav-height) + var(--sl-mobile-toc-height) + var(--mps-subnav-height, 0px));
+    padding-inline-start: var(--sl-content-inline-start);
+  }
+
+  @media (max-width: 49.999rem) {
+    .main-frame {
+      padding-top: calc(var(--sl-nav-height) + var(--sl-mobile-toc-height) + var(--mps-subnav-height, 0px));
+    }
+  }
+
+  @media (min-width: 50rem) {
+    :global([data-has-sidebar]) .header {
+      padding-inline-end: var(--sl-nav-pad-x);
+    }
+    .sidebar-pane {
+      --sl-sidebar-visibility: visible;
+      width: var(--sl-sidebar-width);
+      background-color: var(--sl-color-bg-sidebar);
+      border-inline-end: 1px solid var(--sl-color-hairline-shade);
+      top: calc(var(--sl-nav-height) + var(--mps-subnav-height));
+    }
+  }
+
+  @media (min-width: 72rem) {
+    .subnav-inner {
+      padding-inline-start: calc(var(--sl-sidebar-width) + var(--sl-nav-pad-x));
+    }
+    .sidebar .sidebar-pane {
+      top: calc(var(--sl-nav-height) + var(--mps-subnav-height));
+    }
+  }
+</style>
+</write_to_file>

@@ -1,0 +1,247 @@
+---
+const steps = [
+  { id: "01", label: "Source", detail: "input.mp4 · mov · mkv" },
+  { id: "02", label: "Transcode", detail: "adaptive bitrate" },
+  { id: "03", label: "Package", detail: "master.m3u8 + variants + segments" },
+  { id: "04", label: "Deliver", detail: "Cloudinary · Amazon S3" },
+];
+---
+
+<div class="mps-pipeline">
+  <div class="pipeline-head">
+    <span class="pipeline-title">HLS PIPELINE</span>
+    <span class="pipeline-status">
+      <span class="status-dot"></span>
+      ready
+    </span>
+  </div>
+  <div class="pipeline-body">
+    <ol class="flow-list">
+      {steps.map((step) => (
+        <li class="flow-step">
+          <span class="step-index">{step.id}</span>
+          <div class="step-copy">
+            <strong class="step-label">{step.label}</strong>
+            <span class="step-detail">{step.detail}</span>
+          </div>
+        </li>
+      ))}
+    </ol>
+    <div class="files-panel">
+      <div class="files-head">
+        <span class="files-dot"></span>
+        <span class="files-label">output/</span>
+      </div>
+      <div class="files-grid">
+        <div class="file-col">
+          <code>master.m3u8</code>
+          <code>1080p.m3u8</code>
+          <code>720p.m3u8</code>
+        </div>
+        <div class="file-col">
+          <code>480p.m3u8</code>
+          <code>segments/</code>
+          <code class="dim">…</code>
+        </div>
+      </div>
+    </div>
+    <div class="dest-row">
+      <span class="dest-item">→ Cloudinary</span>
+      <span class="dest-item">→ S3</span>
+    </div>
+  </div>
+  <div class="pipeline-foot">
+    <code>$ npm i mediapipeline-sdk</code>
+  </div>
+</div>
+
+<style>
+  .mps-pipeline {
+    border: 1px solid var(--mps-code-border);
+    border-radius: var(--mps-radius-lg);
+    background: var(--sl-color-gray-6);
+    overflow: hidden;
+    font-family: var(--sl-font-system);
+  }
+
+  .pipeline-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--mps-code-border);
+    background: var(--sl-color-gray-6);
+  }
+
+  .pipeline-title {
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    color: var(--sl-color-gray-2);
+  }
+
+  .pipeline-status {
+    display: flex;
+    align-items: center;
+    gap: 0.3125rem;
+    font-size: 0.625rem;
+    color: var(--sl-color-gray-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background-color: var(--sl-color-accent);
+  }
+
+  .pipeline-body {
+    padding: 1rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .flow-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.375rem;
+  }
+
+  .flow-step {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--mps-code-border);
+    border-radius: var(--mps-radius-sm);
+    background: var(--mps-code-bg);
+  }
+
+  .step-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    border-radius: var(--mps-radius-sm);
+    font-size: 0.5625rem;
+    font-weight: 700;
+    color: var(--sl-color-accent);
+    background: var(--sl-color-gray-5);
+    font-family: var(--sl-font-system-mono);
+  }
+
+  .step-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0; 
+    min-width: 0;
+  }
+
+  .step-label {
+    font-size: 0.75rem;
+    font-weight: 650;
+    color: var(--sl-color-white);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .step-detail {
+    font-size: 0.625rem;
+    color: var(--sl-color-gray-3);
+    font-family: var(--sl-font-system-mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .files-panel {
+    border: 1px solid var(--mps-code-border);
+    border-radius: var(--mps-radius-sm);
+    background: var(--mps-code-bg);
+    padding: 0.5rem 0.625rem;
+  }
+
+  .files-head {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .files-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--sl-color-accent);
+  }
+
+  .files-label {
+    font-size: 0.5625rem;
+    font-weight: 650;
+    color: var(--sl-color-gray-3);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .files-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.25rem 1rem;
+  }
+
+  .file-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+
+  .file-col code {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.625rem;
+    line-height: 1.5;
+    color: var(--sl-color-gray-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-col code.dim {
+    color: var(--sl-color-gray-4);
+  }
+
+  .dest-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .dest-item {
+    font-size: 0.625rem;
+    color: var(--sl-color-gray-3);
+    font-family: var(--sl-font-system-mono);
+    white-space: nowrap;
+  }
+
+  .pipeline-foot {
+    display: flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    border-top: 1px solid var(--mps-code-border);
+    background: var(--sl-color-gray-6);
+  }
+
+  .pipeline-foot code {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.625rem;
+    color: var(--sl-color-gray-3);
+  }
+</style>
+</write_to_file>

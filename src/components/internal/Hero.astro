@@ -1,0 +1,154 @@
+---
+import { LinkButton } from "@astrojs/starlight/components";
+import PipelineVisual from "./PipelineVisual.astro";
+
+const PAGE_TITLE_ID = "_top";
+
+const { actions = [] } = Astro.locals.starlightRoute.entry.data.hero || {};
+---
+
+<div class="hero">
+  <div class="hero__eyebrow">
+    <span class="eyebrow-dot"></span>
+    TypeScript SDK for HLS processing
+  </div>
+  <div class="hero-grid">
+    <div class="hero-copy">
+      <h1 id={PAGE_TITLE_ID} data-page-title>
+        Ship HLS
+        processing
+        without rebuilding
+        the pipeline
+        <span class="h1-accent">yourself.</span>
+      </h1>
+      <div class="hero-desc">
+        Convert source video into adaptive HLS streams, generate master and
+        variant playlists with segment files, and deliver them to Cloudinary
+        or Amazon S3.
+      </div>
+      <div class="hero-actions">
+        {actions.map(({ attrs, icon, link: href, text, variant }) => (
+          <LinkButton {href} {variant} icon={icon?.name} {...attrs}>
+            {text}
+          </LinkButton>
+        ))}
+      </div>
+      <div class="hero-meta">
+        <code>$ npm install mediapipeline-sdk</code>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <PipelineVisual />
+    </div>
+  </div>
+</div>
+
+<style>
+  .hero {
+    width: 100%;
+  }
+
+  .hero__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-3);
+    margin-bottom: 2rem;
+  }
+
+  .eyebrow-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--sl-color-accent);
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
+    gap: 3rem;
+    align-items: center;
+    max-width: 72rem;
+    margin-inline: auto;
+    width: 100%;
+  }
+
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* Heavy editorial display typography */
+  h1 {
+    font-family: var(--mps-font-display);
+    font-size: 4.5rem;
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    color: var(--sl-color-white);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .h1-accent {
+    color: var(--sl-color-accent);
+  }
+
+  .hero-desc {
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    color: var(--sl-color-gray-2);
+    max-width: 46ch;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: center;
+  }
+
+  .hero-meta {
+    display: flex;
+    align-items: center;
+    margin-top: 0.25rem;
+  }
+
+  .hero-meta code {
+    font-family: var(--sl-font-system-mono);
+    font-size: 0.75rem;
+    color: var(--sl-color-gray-3);
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: var(--mps-radius-sm);
+    padding: 0.3125rem 0.5rem;
+  }
+
+  .hero-visual {
+    min-width: 0;
+  }
+
+  @media (max-width: 64rem) {
+    .hero-grid {
+      gap: 2rem;
+    }
+  }
+
+  @media (max-width: 50rem) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+
+    h1 {
+      font-size: 2.75rem;
+      line-height: 1;
+    }
+  }
+</style>
+</write_to_file>
