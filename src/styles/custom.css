@@ -1072,3 +1072,55 @@ site-search button[data-open-modal] kbd {
     animation-iteration-count: 1 !important;
   }
 }
+/* ============================================================
+   Article (long-form guide) components
+   ============================================================ */
+
+.article-lead {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--sl-color-gray-2);
+  max-width: 60ch;
+  margin: 0.25rem 0 1.25rem;
+}
+
+.article-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  margin: 0 0 1.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: var(--mps-radius-md);
+  background: var(--sl-color-gray-6);
+}
+
+.article-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.article-meta-label {
+  font-size: 0.625rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--sl-color-gray-3);
+}
+
+.article-meta-value {
+  font-size: 0.8125rem;
+  font-weight: 550;
+  color: var(--sl-color-white);
+}
+
+.article-kicker {
+  margin-bottom: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-color-accent);
+}

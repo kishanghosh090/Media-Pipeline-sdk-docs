@@ -1,0 +1,1430 @@
+---
+title: "HTTP Live Streaming (HLS): From Video Files to Adaptive Streaming"
+description: Learn how HTTP Live Streaming works end to end — from FFmpeg transcoding, master and variant playlists, and media segments to adaptive bitrate playback, Cloudflare Stream, Cloudinary, Amazon S3, signed URLs, and production video delivery.
+---
+
+<p class="article-lead">
+  Understanding how a single video file becomes playlists, segments,
+  variants, and a playback-ready adaptive stream.
+</p>
+
+<div class="article-meta" role="list" aria-label="Article metadata">
+  <div class="article-meta-item" role="listitem">
+    <span class="article-meta-label">Author</span>
+    <span class="article-meta-value">Kishan Rana Ghosh</span>
+  </div>
+  <div class="article-meta-item" role="listitem">
+    <span class="article-meta-label">Topic</span>
+    <span class="article-meta-value">HLS</span>
+  </div>
+  <div class="article-meta-item" role="listitem">
+    <span class="article-meta-label">Project</span>
+    <span class="article-meta-value">Media Pipeline SDK</span>
+  </div>
+</div>
+
+HTTP Live Streaming (HLS) is Apple's protocol for delivering video over
+ordinary HTTP. Instead of handing a player one large `movie.mp4` and hoping the
+network can keep up, HLS breaks video into many small files called **media
+segments** and describes them with lightweight text files called **playlists**.
+A player reads the playlists, figures out what is available, and fetches segments
+one after another as it plays.
+
+This matters because real viewers are inconsistent. One person is on fibre,
+another on a throttled mobile plan, another on a laptop that just switched to a
+conference-room Wi-Fi. A single video file forces every viewer into the same
+experience, so you either pick a quality that overwhelms some viewers or
+undersells everyone. HLS solves this by shipping the same title at several
+quality levels and letting the player choose, in real time, which one to pull
+next. That is **adaptive bitrate streaming** — the defining idea behind HLS.
+
+HLS is everywhere because it runs on infrastructure the web already has. It needs
+plain HTTP servers and standard caches; any CDN, object store, or edge network
+that can serve files can serve HLS. That is why it works for both **video on
+demand (VOD)** and **live streaming**, and why it is the default ingest-and-play
+format across browsers, mobile apps, and streaming devices.
+
+This article is written from the perspective of building an HLS pipeline with the
+**Media Pipeline SDK**, a TypeScript package that drives FFmpeg to convert a
+source video into an adaptive HLS package and then (optionally) delivers that
+package to local storage, Cloudinary, or Amazon S3. I will explain HLS from first
+principles — playlists, segments, the bitrate ladder, FFmpeg, security, and CDN
+delivery — and show exactly where the SDK fits into that picture.
+
+## What Is HLS?
+
+HLS stands for **HTTP Live Streaming**. It was originally developed by Apple and
+introduced in 2009 to replace proprietary streaming protocols such as RTMP with
+something that could ride on the web's existing HTTP plumbing. Today it is an
+open, widely implemented format that works for both on-demand and live media.
+
+The core mental model has two objects:
+
+- **Playlists (manifests)** — small `.m3u8` text files that describe what media
+  exists and where to find it.
+- **Media segments** — short files (traditionally `.ts`, now often fragmented
+  MP4) that contain a few seconds of audio and video.
+
+A player never downloads the whole video. It downloads a playlist, reads it, then
+downloads segments in order. When a playlist sits at the top of the hierarchy and
+lists multiple quality levels, it is called the **master playlist**. When a
+playlist lists the segments of a single quality level, it is called a **media**
+or **variant playlist**. The distinction between these two is the single most
+important concept in HLS, and it recurs throughout this article.
+
+:::tip
+Ordinary video delivery is "request a file, receive the file." Adaptive streaming
+is "request a manifest, discover the available qualities, and let the client
+continuously renegotiate which quality it pulls." That renegotiation is the whole
+point of HLS.
+:::
+
+Conceptually, an HLS pipeline turns one source file into a tree of playlists and
+segments:
+
+```text
+Original Video
+      |
+      v
+   Encoding
+      |
+      v
+Multiple Quality Levels
+      |
+      v
+HLS Packaging
+      |
+      +-------------------+
+      |                   |
+      v                   v
+Master Playlist       Media Segments
+      |
+      v
+   Video Player
+```
+
+A key reason HLS can be served by ordinary HTTP infrastructure is that every
+artifact it produces is a plain, static file. There is no special server process
+maintaining a socket per viewer. The manifest is a text file; the segments are
+plain media files. Put them on any HTTP origin, in front of any CDN, and they
+play.
+
+## HLS Architecture
+
+HLS itself is a **media delivery format and protocol** — not an encoding
+algorithm. It does not dictate how you compress your video, only how you slice it
+and describe it so a player can adapt. The encoding, resolution scaling, and
+bitrate choices are made by the transcoder (typically FFmpeg); HLS is the
+packaging layer on top.
+
+A complete pipeline has six stages:
+
+```text
+Source Video
+     |
+     v
+Encoder
+     |
+     v
+Transcoder
+     |
+     v
+HLS Packager
+     |
+     +---- master.m3u8
+     |
+     +---- 1080p/
+     |       +---- playlist.m3u8
+     |       +---- segments
+     |
+     +---- 720p/
+     |       +---- playlist.m3u8
+     |       +---- segments
+     |
+     +---- 480p/
+             +---- playlist.m3u8
+             +---- segments
+```
+
+Each stage has a distinct job:
+
+- **Encoder** — compresses raw or uncompressed media into a codec such as H.264
+  (video) and AAC (audio). The encoder does the actual compression.
+- **Transcoder** — produces *multiple* renditions by re-encoding the source at
+  several resolutions and bitrates: 1080p, 720p, 480p, and so on. Transcoding is
+  just encoding into several targets at once.
+- **Packager** — takes each encoded rendition and splits it into short segments,
+  then writes the master and variant playlists that describe them. This is where
+  HLS proper enters the picture.
+- **Origin storage** — the durable home of the finished playlists and segments:
+  local disk, an object store like S3, or a media service like Cloudinary.
+- **CDN** — a caching layer that serves the files to viewers from locations close
+  to them.
+- **Client/player** — the piece that requests playlists, measures bandwidth, and
+  decides which segments to fetch next.
+
+:::note
+A common confusion is calling HLS an "encoding format." It is not. H.264, H.265,
+and AV1 are encoding formats; HLS is the manifest-plus-segments protocol that
+wraps whatever codec you encoded into. You encode with an HLS-compatible codec,
+then package the result with HLS.
+:::
+
+## How HLS Actually Works
+
+Playback is a loop. The player starts with the master playlist, follows it to a
+variant playlist, then keeps fetching segments while continuously watching the
+network. The sequence:
+
+```text
+1. Player requests master.m3u8
+2. Server returns available variants
+3. Player evaluates bandwidth/device conditions
+4. Player selects a variant playlist
+5. Player requests media segments
+6. Segments are buffered and played
+7. Player continuously measures network conditions
+8. Player switches variants when appropriate
+```
+
+The interesting part is steps 7 and 8 — the adaptive loop. A player does not
+choose a quality once and stick with it. Before each segment request it re-runs a
+small decision: how fast did the last few downloads go, how full is my buffer,
+and what is the safest quality to play next?
+
+Concretely, the player reacts to the environment:
+
+- **Network becomes slower** — the measured throughput drops below the current
+  variant's bitrate. The player steps *down* one rung of the ladder so the next
+  segment downloads faster than real-time and playback does not stall.
+- **Network becomes faster** — sustained throughput comfortably exceeds the
+  current variant. The player steps *up* a rung. It is deliberately conservative
+  here: it will only upgrade after a stretch of headroom, so a momentary spike
+  does not cause a burst of upgrades followed by a downgrade.
+- **Bandwidth fluctuates** — the player smooths its estimate over several
+  downloads rather than reacting to one outlier. Hysteresis (asymmetric
+  thresholds for up-switch vs. down-switch) prevents thrashing.
+- **Player buffer becomes low** — if the buffer gets close to empty, the player
+  drops quality aggressively to catch up, because stalling is the worst possible
+  outcome. Buffer health can override the bandwidth estimate.
+- **User changes device or orientation** — a new device (or a phone rotating
+  portrait→landscape, which changes the viewport and effective resolution) brings
+  a new decode capability and screen size. The player re-evaluates which
+  variants it can even decode and restricts the ladder accordingly.
+
+The quality the player picks at startup is usually modest — high enough to look
+reasonable, low enough to begin playing quickly. It then *works its way up* as it
+gains confidence. This is why you often see a video start slightly soft and
+sharpen a few seconds later.
+
+:::tip
+A good bitrate ladder gives the player useful rungs to climb. If the gap between
+two adjacent renditions is too large, every switch is a big jump in either
+quality or buffering risk. If the rungs are too close together, the player has
+many choices but little to gain. Ladder design matters more than most people
+expect.
+:::
+
+## Master Playlist
+
+The master playlist is the entry point. It is a text file, conventionally named
+`master.m3u8`, that lists every rendition of the video that is available and the
+bitrate a player needs to sustain each one. Here is a realistic example:
+
+```text
+#EXTM3U
+#EXT-X-VERSION:3
+
+#EXT-X-STREAM-INF:BANDWIDTH=500000,
+RESOLUTION=854x480
+480p/playlist.m3u8
+
+#EXT-X-STREAM-INF:BANDWIDTH=1500000,
+RESOLUTION=1280x720
+720p/playlist.m3u8
+
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,
+RESOLUTION=1920x1080
+1080p/playlist.m3u8
+```
+
+Walking through the fields:
+
+- `#EXTM3U` — the magic number at the top of every playlist. It marks the file as
+  an extended M3U playlist and must be the first line.
+- `#EXT-X-VERSION:3` — declares the HLS protocol version. Version 3 or higher is
+  common for adaptive streams; newer features require higher versions.
+- `#EXT-X-STREAM-INF` — a *variant stream* directive. Each occurrence describes one
+  rendition, and the line **immediately following** it is the URL of that
+  rendition's media playlist.
+- `BANDWIDTH` — the estimated bitrate of this rendition in bits per second
+  (`BANDWIDTH=500000` is 500 Kbps). It is the single most important number in the
+  master playlist: players depend on it to choose a rendition. It is an
+  estimate, conventionally including audio, and should reflect what the segment
+  files actually contain.
+- `RESOLUTION` — the pixel dimensions of the rendition (`1920x1080`). It helps the
+  player avoid picking a rendition larger than the screen can usefully display.
+
+Notice what is *missing*: there is no video data here. The master playlist never
+contains bytes of video and audio. It contains only pointers — a short, ordered
+list of "if you can sustain roughly this bandwidth and render this resolution,
+here is the playlist that describes the actual media." The player uses the master
+playlist to *choose*, then fetches the chosen variant playlist to *play*.
+
+This indirection is the whole reason adaptive bitrate works. Because the master
+playlist is tiny and cheap to refetch, a player can return to it later — for
+example after a change in network conditions — and re-evaluate the full set of
+available renditions.
+
+## Variant Playlists
+
+A variant playlist (also called a **media playlist**) describes the segments of
+*one* rendition. Where the master playlist points to variant playlists, a variant
+playlist points to actual segment files:
+
+```text
+#EXTM3U
+#EXT-X-TARGETDURATION:6
+#EXT-X-VERSION:3
+
+#EXTINF:6.0,
+segment000.ts
+
+#EXTINF:6.0,
+segment001.ts
+
+#EXTINF:6.0,
+segment002.ts
+```
+
+The fields:
+
+- `#EXTM3U` — same marker as always; every HLS playlist starts with it.
+- `#EXT-X-TARGETDURATION:6` — declares the *maximum* segment duration in seconds.
+  The player uses this as a hint about segment size and timing. No segment should
+  exceed this value.
+- `#EXTINF:6.0,` — an *information* directive that gives the duration, in seconds,
+  of the segment named on the following line. The trailing comma is part of the
+  syntax. Each `#EXTINF` is followed by exactly one segment URL.
+- **Segment URLs** — the lines like `segment000.ts` are relative paths to segment
+  files. They are resolved against the location of the playlist itself.
+
+The player reads this list top to bottom and requests the segment URLs in order.
+It knows how long each segment lasts (from `#EXTINF`), how long the playlist's
+segments can be at most (from `#EXT-X-TARGETDURATION`), and therefore when to ask
+for the next one. For VOD, the playlist is static — the file describes the entire
+asset from first segment to last. For live streams, the same kind of file is
+updated continuously with a sliding window of segments.
+
+The distinction between the two playlist kinds is worth making explicit:
+
+| | Master playlist | Media / variant playlist |
+| --- | --- | --- |
+| Purpose | Lists available renditions | Lists segments of one rendition |
+| Points to | Variant playlists | Media segment files |
+| Key directives | `#EXT-X-STREAM-INF`, `BANDWIDTH` | `#EXTINF`, `#EXT-X-TARGETDURATION` |
+| Contains video? | No | No (it points to files that do) |
+| Typical name | `master.m3u8` | `playlist.m3u8`, `variant_720p.m3u8` |
+
+If you remember nothing else, remember this: **the master playlist is a menu of
+qualities; the variant playlist is a list of segments for one quality.** A player
+always visits the former first, and the latter repeatedly.
+
+## HLS Segments
+
+Segments are the actual media. Instead of one contiguous file, the packager
+writes many short files, each holding a few seconds of audio and video. A
+two-hour film becomes hundreds of six-second pieces rather than one large MP4.
+
+Why split at all? Three reasons:
+
+1. **Adaptive switching needs boundaries.** If the player is going to swap from
+   720p to 1080p mid-playback, the switch can only happen at a moment where both
+   renditions are "between" media. Segments provide those clean seams.
+2. **Partial delivery and seeking.** To jump to minute 42, the player only needs
+   the playlist and the segment at that offset — not the bytes before it.
+3. **Cache friendliness.** Small, individually addressable files are exactly what
+   HTTP caches and CDNs are good at, and exactly what they can serve in parallel.
+
+Typical segment durations are **2 to 10 seconds**, with 6 seconds being a common
+default. Shorter segments mean lower latency and finer switching granularity but
+more files and more requests; longer segments mean fewer requests but coarser
+switching and higher start-up latency. The trade-off is real and tunable.
+
+Two container formats dominate:
+
+- **MPEG-TS (`.ts`)** — the original HLS segment format, a stream-oriented
+  container designed for broadcast. It is still the most broadly compatible
+  choice and is what most FFmpeg HLS output has used historically.
+- **Fragmented MP4 / CMAF (`.m4s`)** — a single, modern container that can be
+  served to both HLS and DASH. It is increasingly the default because one set of
+  encoded segments can feed both protocols, which simplifies caching and storage.
+
+Segment boundaries must align with **keyframes**. A keyframe (I-frame) is a full
+frame that can be decoded without reference to any other frame; the frames after
+it (P-frames and B-frames) depend on it. A player can only start decoding cleanly
+at a keyframe, so every segment must *begin* with one. This is why HLS packaging
+requires controlling the **GOP** (group of pictures) size — the distance between
+keyframes — during encoding. If your GOP is 6 seconds at the source framerate,
+you can cut cleanly every 6 seconds.
+
+**GOP/keyframe alignment across renditions** is the trick that makes switching
+seamless. If every rendition keeps its keyframes at the same timestamps, then a
+player switching from `720p` to `1080p` at segment 42 lands on a keyframe and
+continues without a visible hitch. If the keyframes are *not* aligned, a switch
+can produce a brief freeze or a corrupted-looking frame while the decoder waits
+for the next keyframe.
+
+```text
+Video File                     HLS
+==========                     ===
+
+one large,                       master.m3u8      (the menu)
+contiguous file       →          variant.m3u8     (per quality)
+                                 segment001.ts    (the actual media)
+                                 segment002.ts
+                                 segment003.ts
+```
+
+The playlist plus the segments is the deliverable. The original file is an
+*input*; the playlist-plus-segments tree is the *output* that a player actually
+consumes.
+
+## Adaptive Bitrate Streaming
+
+Adaptive bitrate streaming (ABR) is the behavior the whole HLS format exists to
+enable. You encode the same video several times, at several resolutions and
+bitrates — the **bitrate ladder** — and the player climbs up and down that ladder
+as conditions change.
+
+A ladder has two dimensions that travel together:
+
+- **Resolution ladder** — the pixel dimensions of each rung: 1920×1080, 1280×720,
+  854×480, and so on.
+- **Bitrate ladder** — how much data each rung consumes per second.
+
+They are related: more pixels and more motion need more bits to look good. A
+simple three-rung ladder:
+
+```text
+1080p → 3 Mbps
+720p  → 1.5 Mbps
+480p  → 500 Kbps
+```
+
+The numbers in the master playlist's `BANDWIDTH` field are the bitrate side of
+this ladder. The `RESOLUTION` field is the resolution side. The player estimates
+its own available bandwidth and picks the highest rung it can reliably sustain.
+
+Why are multiple renditions *necessary*? Because a ladder converts one
+compromise into a range of choices:
+
+- A viewer with **3 Mbps** plays 1080p comfortably.
+- A viewer with **1 Mbps** cannot sustain 1080p without buffering, but plays
+  720p smoothly.
+- A viewer on a **400 Kbps** connection gets 480p and still sees the video
+  rather than a spinner.
+
+Without multiple renditions, you would have to ship at the lowest common
+denominator, and everyone with better bandwidth would get worse video than they
+could handle.
+
+The player side involves a few competing goals the ABR algorithm juggles:
+
+- **Startup quality** — begin playing quickly. The player often starts at a
+  conservative rung and then climbs, trading a few seconds of softer video for
+  near-instant start.
+- **Buffering** — keep enough data ahead of the playhead that a temporary network
+  dip does not pause playback.
+- **Rebuffering** — the worst case, where the buffer empties and playback stops
+  while more data loads. ABR exists primarily to avoid this; if rebuffering
+  happens, the estimate was wrong or the ladder had no low-enough rung.
+- **Quality vs. stability** — every up-switch is a bet that the network can
+  sustain a higher bitrate; every wrong bet is future rebuffering. A good
+  algorithm optimizes for *fewest interruptions at the highest sustainable
+  quality*, not for the highest quality at any moment.
+
+The Media Pipeline SDK encodes this idea directly: you give it a list of
+resolution targets (for example `["1080", "720", "480"]`), and it produces a
+rendition for each using built-in bitrate profiles. Its `HLS_PROFILES` table maps
+each resolution to a concrete bitrate and rate-control budget — for example
+`"1080"` targets `5000k` video with a `5350k` max rate, while `"480"` targets
+`1400k`. Those profiles *are* the SDK's bitrate ladder, applied per rendition.
+
+## Encoding vs Transcoding vs Packaging
+
+These three words are used loosely in video tooling, but they describe different
+stages. Keeping them straight will save you debugging time.
+
+### Encoding
+
+Encoding compresses raw (or already-compressed) media into a codec format. Raw
+video is enormous, so it must be encoded into something like H.264 for video and
+AAC for audio before it can be delivered at a sane bitrate. Encoding is about
+choosing a codec, a bitrate, and compression settings, and producing one
+compressed stream.
+
+### Transcoding
+
+Transcoding is encoding several times at once to produce multiple versions. When
+you take one source file and generate a 1080p rendition, a 720p rendition, and a
+480p rendition, you are transcoding. In practice, transcoding often means both
+*changing the codec* and *changing the resolution/bitrate* — the umbrella term
+for "turn input X into outputs Y₁, Y₂, Y₃."
+
+### Packaging
+
+Packaging takes the encoded renditions and turns them into an HLS package:
+segments plus playlists. It does not change the video bytes; it cuts them at
+keyframe boundaries and writes the `.m3u8` files and directory structure that
+describe them.
+
+```text
+Source Video
+     |
+     v
+Transcoding
+     |
+     +---- 1080p
+     +---- 720p
+     +---- 480p
+     |
+     v
+HLS Packaging
+     |
+     +---- master.m3u8
+     +---- variant playlists
+     +---- segments
+```
+
+In a tool like FFmpeg, these stages blur together into a single command.
+FFmpeg can transcode *and* package in one pass — encoding each rendition while
+simultaneously cutting it into segments and writing playlists. Conceptually,
+though, they remain separate responsibilities, and it helps to reason about them
+separately when something goes wrong: "is the problem in the encode, or in the
+playlist?"
+
+## FFmpeg and HLS
+
+FFmpeg is the de facto standard command-line engine for video processing, which
+is why the Media Pipeline SDK builds on it. It can read almost any input codec or
+container, transcode to H.264/AAC, scale resolution, control bitrate, set
+keyframe intervals, and — critically for us — mux directly to HLS by writing
+segments and playlists. One process can cover transcoding and packaging together.
+
+A representative FFmpeg invocation for producing a single rendition:
+
+```bash
+ffmpeg \
+  -i input.mp4 \
+  -filter:v scale=w=1280:h=720 \
+  -c:v libx264 \
+  -b:v 1500k \
+  -c:a aac \
+  -b:a 128k \
+  -f hls \
+  -hls_time 6 \
+  -hls_playlist_type vod \
+  output.m3u8
+```
+
+What each flag does:
+
+- `-i input.mp4` — the source file.
+- `-filter:v scale=w=1280:h=720` — scale the video to 720p.
+- `-c:v libx264` — encode video with the H.264 encoder `libx264`.
+- `-b:v 1500k` — target video bitrate of 1.5 Mbps.
+- `-c:a aac` and `-b:a 128k` — encode audio as AAC at 128 Kbps.
+- `-f hls` — use the HLS muxer, which slices the output and writes playlists.
+- `-hls_time 6` — target roughly 6 seconds per segment.
+- `-hls_playlist_type vod` — mark the playlist as a complete, static VOD asset so
+  the player knows it will not be updated.
+
+:::caution
+This command is a **conceptual example**, not a claim about the internal
+implementation of the Media Pipeline SDK. The SDK's documented surface is the
+`MediaPipelineSDK` class and its `processLocal`, `processCloudinary`, and
+`processS3` methods. It calls FFmpeg internally to do this kind of work, but the
+exact flags and layout are the SDK's implementation detail.
+:::
+
+In practice, generating a full adaptive package means running a pass like the
+above — with the appropriate resolution, bitrate, and keyframe settings — for
+*each* rendition, then writing a master playlist that references the results.
+The bitrate control (`-b:v` plus `maxrate`/`bufsize` for capped bitrate), the
+resolution choice (`-filter:v scale`), and a fixed GOP/keyframe interval are the
+levers that make the segment boundaries align cleanly across renditions.
+
+The SDK's exported presets reflect exactly these levers. `VIDEO_RESOLUTIONS` maps
+each resolution key to a scale target (`"720"` → `"1280:720"`), and `HLS_PROFILES`
+maps each key to a bitrate and a `maxrate`/`bufsize` pair for rate control. The
+profile table is the SDK's way of centralizing the FFmpeg settings so callers do
+not hand-roll these commands.
+
+## Media Pipeline SDK Architecture
+
+The Media Pipeline SDK is a thin, opinionated layer over FFmpeg and object
+storage. Its public surface is deliberately small: one class (`MediaPipelineSDK`),
+three processing methods, and a handful of exported presets and helpers.
+
+The architecture, at the level its documentation exposes:
+
+```text
+Application
+    |
+    v
+Media Pipeline SDK
+    |
+    +-------------------+
+    |                   |
+    v                   v
+FFmpeg              Configuration
+    |
+    v
+HLS Generator
+    |
+    v
+HLS Output
+    |
+    +------------+-------------+
+    |            |             |
+    v            v             v
+ Local       Cloudinary       S3
+```
+
+The SDK's contract is shaped around its constructor and methods rather than
+around internal classes:
+
+- **`new MediaPipelineSDK(config, resolutions)`** — the entry point. `config`
+  describes `storage` (its `type`, `baseDir`, and optional `credentials`), and
+  `resolutions` is an array of resolution keys such as `["1080", "720", "480"]`.
+- **Configuration** — the SDK supports `local`, `cloudinary`, and `s3` storage
+  types in its current release. The type is validated up front, so a
+  misconfigured storage value fails early.
+- **FFmpeg step** — the SDK generates HLS assets locally regardless of the
+  delivery target. This happens by invoking FFmpeg for each requested resolution
+  and packaging the result into a per-run output directory.
+- **HLS output** — the result of that step is a directory tree with a
+  `master.m3u8`, variant playlists, and segment files.
+- **Delivery** — depending on `storage.type`, the SDK either returns the local
+  path (`processLocal`), uploads the package to Cloudinary
+  (`processCloudinary`), or uploads to S3 and returns a signed playback URL
+  (`processS3`).
+
+The important architectural idea is that **generation and delivery are separate
+concerns**. HLS is always produced locally first; only the final delivery step
+changes. That is why Cloudinary and S3 configurations still require a local
+`baseDir` — the SDK needs somewhere to write segments before it uploads them.
+
+## Local HLS Processing
+
+The simplest SDK path processes a video and leaves the HLS package on local
+disk. You configure `local` storage, hand the constructor a resolution list, and
+call `processLocal` with a source file:
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function main() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "local",
+        baseDir: "./output",
+      },
+    },
+    ["1080", "720", "480"],
+  );
+
+  const result = await sdk.processLocal("./samples/input.mp4");
+
+  console.log(result.variants[0].path);
+}
+
+main().catch(console.error);
+```
+
+What happens under the hood, per the SDK's documentation:
+
+1. The storage configuration is validated.
+2. The incoming media path is validated (the SDK accepts `.mp4`, `.mov`, and
+   `.mkv`).
+3. A UUID-based output directory is created under `config.storage.baseDir`.
+4. The video is transcoded into HLS playlists and segments for each requested
+   resolution.
+5. The master playlist path is returned through the result's variants.
+
+`processLocal()` returns a `ProcessResult` with the output directory used during
+the run. A typical result looks like:
+
+```ts
+{
+  type: "video",
+  variants: [
+    {
+      name: "hls",
+      path: "output/857c83e9-7854-45b6-a2e3-8ca5fd834a43/master.m3u8",
+    },
+  ],
+  outputDir: "output/857c83e9-7854-45b6-a2e3-8ca5fd834a43",
+}
+```
+
+The filesystem layout that produces, again per the documentation:
+
+```text
+output/
+└── <uuid>/
+    ├── master.m3u8
+    ├── variant_1080p.m3u8
+    ├── variant_720p.m3u8
+    ├── segment_720p_001.ts
+    ├── segment_720p_002.ts
+    └── ...
+```
+
+This is the "what just happened" view of everything in the previous sections:
+one input file, a master playlist, variant playlists, and segments — all written
+to a predictable folder.
+
+## Cloudinary Delivery
+
+If you do not want to serve HLS from your own infrastructure, the SDK can upload
+the generated package to Cloudinary. The flow is identical through the FFmpeg
+step — HLS is still generated locally — and only the delivery step changes.
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function main() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "cloudinary",
+        baseDir: "./output",
+        credentials: {
+          cloudName: "your-cloud-name",
+          apiKey: "your-api-key",
+          apiSecret: "your-api-secret",
+        },
+      },
+    },
+    ["720", "480", "360"],
+  );
+
+  const masterUrl = await sdk.processCloudinary("./samples/input.mp4");
+
+  console.log(masterUrl);
+}
+
+main().catch(console.error);
+```
+
+Cloudinary configuration still requires a `baseDir` because the SDK needs a local
+temporary directory for segment generation before uploading. The credentials
+object is `cloudName`, `apiKey`, and `apiSecret`.
+
+Two things are worth knowing about the upload behavior:
+
+- **Predictable folder structure.** Every run uploads under
+  `mediapipeline/{videoId}/`, where `videoId` is the per-run UUID. The master
+  playlist, variant playlists, and segments all live under that one prefix, which
+  keeps a given title's HLS asset self-contained and easy to locate or clean up.
+- **Raw resource type.** Playlists and segments are uploaded as Cloudinary *raw*
+  resources (not derived images/video), with bounded concurrency and automatic
+  retries for transient failures such as `429` or `5xx` responses.
+
+A concrete upload result follows the shape:
+
+```text
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/master.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/variant_720p.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/segment_240p_001.ts
+```
+
+`processCloudinary()` returns a single string — the URL of the uploaded
+`master.m3u8`. That URL is what you hand to an HLS player. Because all segment
+references inside the variant playlists are relative, the player resolves them
+against the master playlist's location and fetches the rest of the package
+without further configuration.
+
+## Amazon S3 Delivery
+
+S3 is the other hosted target. The SDK uploads the generated HLS package into a
+bucket under a predictable key prefix and returns a **signed playback URL**, so
+the content can stay private while remaining playable by authorized viewers.
+
+```ts
+import { MediaPipelineSDK } from "mediapipeline-sdk";
+
+async function main() {
+  const sdk = new MediaPipelineSDK(
+    {
+      storage: {
+        type: "s3",
+        baseDir: "./output",
+        credentials: {
+          accessKeyId: "your-access-key-id",
+          secretAccessKey: "your-secret-access-key",
+          region: "your-region",
+          bucket: "your-bucket",
+          folderName: "mediapipeline",
+        },
+      },
+    },
+    ["720", "480", "360"],
+  );
+
+  const playbackUrl = await sdk.processS3("./samples/input.mp4");
+
+  console.log(playbackUrl);
+}
+
+main().catch(console.error);
+```
+
+The S3 credential shape has five fields: `accessKeyId`, `secretAccessKey`,
+`region`, `bucket`, and `folderName`. As with Cloudinary, a local `baseDir` is
+still required because segments are written locally before upload.
+
+Each run uploads to:
+
+```text
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/master.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/variant_720p.m3u8
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/segment_720p_001.ts
+mediapipeline/7450677b-c0bf-4053-bfc5-b29d92f37171/signed/master.m3u8
+```
+
+The `signed/` prefix is the interesting part. The SDK takes the generated
+playlists and rewrites them so that relative media paths become signed S3 URLs,
+and nested playlist references point at the `signed/` paths. The result: when a
+player opens `signed/master.m3u8`, every subsequent request it makes — for
+variant playlists and for segments — also carries a valid signature.
+
+`processS3()` returns the signed URL for `signed/master.m3u8`. These signed links
+are **time-limited** (the current release uses a short five-minute window), so the
+returned URL must be used promptly. After expiry, you request a fresh playback
+URL by calling `processS3()` again.
+
+This matters for the security story in a later section: the *original* objects in
+the bucket can stay private, and only the signed playback chain — with its
+rewritten playlists — is handed to a viewer.
+
+## HLS Security
+
+Security for HLS is fundamentally different from security for a single-file
+download. When you serve one `video.mp4`, protecting the whole asset is a single
+decision about one URL. HLS splits the asset across a master playlist, several
+variant playlists, and hundreds of segments — all separate HTTP requests. If you
+protect only the first URL and leave the others open, you have protected nothing.
+
+The options form a spectrum:
+
+- **Public HLS URLs** — everything is publicly readable. Fine for free,
+  non-sensitive content, but anyone who can read the master playlist can follow
+  it to every segment.
+- **Private HLS assets** — the underlying objects are not publicly readable at
+  all (for example, an S3 bucket with no public access). A viewer needs
+  *granted* access to each artifact.
+- **Signed URLs** — private objects are made reachable on a per-request basis by
+  appending a time-bound signature. The signature proves a trusted party generated
+  this URL for this object, and it usually carries an expiration.
+- **Expiring playback URLs** — a signed URL that is valid for a limited window
+  (the SDK's five-minute S3 window is an example). Past expiry, the URL stops
+  working and the viewer must request a fresh one.
+
+Two concepts that get conflated in media delivery are worth separating:
+
+| | Authentication | Authorization |
+| --- | --- | --- |
+| Question | *Who* is this viewer? | *What* is this viewer allowed to watch? |
+| Mechanism | Login, sessions, tokens | Signed URLs, access rules, entitlements |
+| In HLS terms | Proves identity before serving | Controls *which* playlists/segments to serve |
+
+A viewer can be fully authenticated and still unauthorized to watch a specific
+title. Signed URLs are an *authorization* mechanism layered over the top: they
+grant access to specific objects, often with a time limit, without exposing the
+underlying storage.
+
+The classic mistake is protecting only `master.m3u8`. A player that receives a
+signed master playlist still has to fetch the variant playlists and segments it
+references. If those are public, the "protection" is cosmetic — anyone with the
+master playlist (or who guesses the URL patterns) reads the whole stream. The
+fix is **token propagation**: the signed master playlist must reference signed
+variant playlists, and those must reference signed segments. Every link in the
+chain must be protected, or none of it is.
+
+This is exactly why the SDK's S3 flow rewrites the playlists when it creates the
+`signed/` tree. It does not merely sign the master playlist and hope for the
+best; it rewrites the nested references so the signatures propagate down the
+chain to every segment.
+
+There is an additional CDN subtlety. A CDN may cache signed URLs and serve them
+again — often after they have expired, or to a different viewer. When
+authorization is per-viewer, you generally want playback URLs to be short-lived
+and, where the platform supports it, tied to the requesting context. The
+interplay between signed URLs and CDN caching is a deliberate design decision,
+not an afterthought.
+
+## CDN and HLS
+
+HLS was explicitly designed to work with HTTP caching. Every artifact is a plain
+file with a stable URL, so a CDN can cache playlists and segments the same way it
+caches any other static asset. That is a large part of why HLS scaled.
+
+A CDN architecture for HLS looks like this:
+
+```text
+                    +--> Viewer 1
+                    |
+Origin Storage ---> CDN ---> Viewer 2
+                    |
+                    +--> Viewer 3
+```
+
+The pieces:
+
+- **Origin** — the durable store of truth: your local filesystem, an S3 bucket,
+  or Cloudinary. It holds the master playlist, variant playlists, and segments.
+- **Edge** — CDN points of presence distributed around the world. When a viewer
+  requests a segment, the nearest edge serves it from cache or pulls it from the
+  origin once.
+- **Caching** — segments are immutable, so they can be cached aggressively with
+  long TTLs. Playlists are trickier: VOD playlists are effectively immutable, but
+  live playlists change constantly and need short (or no) caching.
+- **Geographic distribution** — because the popular segments are cached near
+  viewers, most traffic never reaches the origin at all, which cuts latency and
+  origin load.
+- **Latency and bandwidth** — caching reduces both the round-trip time to the
+  viewer and the number of requests that hit the origin.
+
+The key insight for HLS specifically: **segments are ideal cache citizens** and
+playlists are not always. A six-second `segment042.ts` never changes once
+written, so it is safe to cache for years. A live playlist is rewritten every
+few seconds, so it must be fetched fresh — which is why live ABR favors short
+playlist TTLs and careful cache configuration. The distinction between "cache
+this forever" (segments) and "fetch this fresh" (live manifests) is the core of
+CDN tuning for HLS.
+
+## HLS with Cloudflare
+
+Cloudflare Stream is a managed video service for live and on-demand delivery. It
+takes the pipeline we have been describing — upload, encode, store, package,
+deliver — and runs it as a service on Cloudflare's global network, so an
+application does not have to own any of the transcoding or origin
+infrastructure.
+
+What Stream provides, in one flow:
+
+```text
+User Upload
+    |
+    v
+Cloudflare Stream
+    |
+    +---- Encode
+    |
+    +---- Store
+    |
+    +---- Generate ABR representations
+    |
+    v
+HLS / DASH
+    |
+    v
+Viewer
+```
+
+Concretely:
+
+- **Upload** — you or your end users upload a video to Stream (including
+  one-time "direct creator uploads" so users can push video to your account
+  without you handling raw uploads).
+- **Encode** — Stream automatically encodes using the H.264 codec and produces an
+  adaptive bitrate set, from 360p up to 1080p, with the bitrate ladder handled
+  for you.
+- **Store** — the encoded renditions are stored for you; there is no bucket or
+  origin to operate.
+- **Deliver** — Stream exposes each video and live input as HLS and DASH
+  manifests, playable on any compatible player, and delivered over Cloudflare's
+  network of edge locations.
+
+Because Stream outputs standard HLS (and DASH) manifests, you are not locked into
+a proprietary player. You can use the built-in Stream Player, or hand the HLS
+manifest to any third-party player — including the web's `hls.js` and native
+players on iOS and Android. That is the important bridge between "managed video
+service" and "it still speaks HLS": the protocol knowledge in this article
+applies directly.
+
+The other pieces you would otherwise build yourself — access control, delivery,
+analytics, live ingest — are all part of Stream, which makes it an instructive
+contrast with the Media Pipeline SDK. The SDK is the *do-it-yourself* pipeline:
+you run the transcoding locally and own the output. Stream is the *managed*
+pipeline: the same HLS concepts, operated for you.
+
+## Cloudflare HLS Manifest
+
+Every video and live input in Cloudflare Stream has its own unique HLS manifest,
+accessible at a predictable URL:
+
+```text
+https://customer-<CODE>.cloudflarestream.com/<UID>/manifest/video.m3u8
+```
+
+Break that down:
+
+- **Customer code** (`CODE`) — the identifier for your Cloudflare account, unique
+  per account and present in every Stream URL.
+- **Video UID** (`UID`) — the unique identifier for the specific video or live
+  input.
+- **Manifest** — the path segment that says "give me the playlist, not the embed
+  player page."
+- **`video.m3u8`** — the HLS manifest itself. The DASH equivalent lives at
+  `manifest/video.mpd`.
+
+This is the URL you hand to a custom player. The player treats it like any other
+HLS master playlist: it fetches the manifest, reads the available renditions,
+picks one, and starts pulling segments. The actual segment URLs are produced by
+Stream and live behind the scenes; you do not author them.
+
+One caution from the current Stream documentation matters a lot in practice:
+**manifests are dynamic assets that may be updated at any time.** You should read
+them directly from Stream rather than caching, proxying, or storing them, because
+a stale manifest may be missing features or point at assets that have moved.
+This is the live-style "fetch fresh" rule from the CDN section, applied to a
+service that also serves on-demand video.
+
+Two manifest-related knobs are worth knowing:
+
+- **Bandwidth hint.** You can append `?clientBandwidthHint=1.8` to ask for the
+  rendition closest to a target bitrate (in Mbps). It is documented as a
+  last-resort override for players that lack their own bandwidth controls, not a
+  replacement for normal ABR.
+- **Low-latency playback.** If a Live Input is enabled for the Low-Latency HLS
+  beta, appending `?protocol=llhls` returns the low-latency manifest.
+
+## Cloudflare + hls.js
+
+On the web, `hls.js` is the common way to play HLS in browsers that do not
+natively support it (Chrome, Firefox, Edge). A minimal setup that plays a
+Cloudflare Stream manifest:
+
+```html
+<video id="video" controls></video>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<script>
+const video = document.getElementById("video");
+
+if (Hls.isSupported()) {
+    const hls = new Hls();
+
+    hls.loadSource(
+        "https://customer-<CODE>.cloudflarestream.com/<UID>/manifest/video.m3u8"
+    );
+
+    hls.attachMedia(video);
+}
+</script>
+```
+
+What is happening:
+
+- The `<video>` element is the playback surface; it has no `src` of its own.
+- `Hls.isSupported()` asks whether this browser should use `hls.js` (MSE-based)
+  at all. Safari and iOS Safari support HLS natively, so the modern pattern is:
+  if `Hls.isSupported()` is true, use `hls.js`; otherwise, if the browser can
+  play HLS natively, assign the manifest directly to `video.src`.
+- `new Hls()` creates the player engine.
+- `hls.loadSource(url)` tells the engine where the master playlist lives.
+- `hls.attachMedia(video)` binds the engine to the element so decoded frames and
+  audio reach the page.
+
+Cloudflare Stream is compatible with any player that supports HLS and DASH, so
+`hls.js` is one option among several: the Stream documentation lists reference
+players for HLS (`hls.js`), DASH (`dash.js`), and higher-level wrappers such as
+Video.js and Vidstack.
+
+This is why a *player abstraction* matters. "HLS playback" is not one code path
+across the web — it is native HLS on Safari, `hls.js` on Chromium and Firefox, and
+native system players (`AVPlayer` on iOS, `ExoPlayer` on Android) in apps. Every
+one of those consumes the same manifest URL. Wrapping the choice in one place lets
+you point every platform at a single HLS stream instead of maintaining
+per-platform delivery logic.
+
+## Cloudflare Signed URLs
+
+By default, a Cloudflare Stream video is viewable by anyone who knows its video
+ID. For paid or private content, Stream provides signed URL access control.
+
+The model is a flag on the video plus a signed token:
+
+- **Public playback** — the default. Anyone with the video ID (or the `watch`
+  URL, or the embed) can play it.
+- **Authenticated/private playback** — you mark the video to *require signed
+  URLs*. When that flag is on, the public links and the built-in player stop
+  working, and a viewer must present a valid signed token to watch or download.
+- **Signed tokens** — a time-bound credential that grants access. Typical uses
+  the Stream documentation calls out are restricting playback to logged-in
+  members, limiting access to a window such as 24 hours, and restricting by
+  geography.
+- **Expiration** — tokens carry restrictions (including expiry) via an access
+  rules structure, so a link can be made to stop working after a chosen time.
+
+Stream documents three ways to produce signed tokens:
+
+1. Call the signed-token endpoint with the video and the restrictions you want.
+2. Use the Stream binding inside a Cloudflare Worker to generate tokens.
+3. Fetch a signing key once and generate tokens yourself using that key, without
+   a per-request call to an endpoint.
+
+I am deliberately not reproducing the exact token format here; the format and the
+available restriction fields follow Stream's documented `accessRules` schema and
+change over time, so the current reference is the authoritative source (linked at
+the end of this article).
+
+The authorization principle is the same one from the HLS Security section: the
+*signed token proves entitlement*, the *service enforces it*, and everything the
+player subsequently fetches must be covered by that same entitlement. Signing a
+manifest while leaving segments public would be the same "protect only
+`master.m3u8`" mistake, just on a managed platform — which is why the signing is
+enforced by the platform across the stream, not bolted onto one file.
+
+## HLS vs DASH
+
+HLS and MPEG-DASH are the two dominant adaptive streaming formats, and they solve
+the same problem with the same strategy: a manifest, multiple renditions, and
+segmented media delivered over HTTP. They differ in format details and ecosystem.
+
+| Feature | HLS | MPEG-DASH |
+| --- | --- | --- |
+| Manifest | `.m3u8` | `.mpd` |
+| Ecosystem | Strong Apple/web ecosystem | Broad standards-based ecosystem |
+| Adaptive bitrate | Yes | Yes |
+| HTTP delivery | Yes | Yes |
+| VOD | Yes | Yes |
+| Live | Yes | Yes |
+
+A few practical differences stand out:
+
+- **Manifest shape.** HLS uses the playlist-oriented `.m3u8`; DASH uses the
+  XML-based Media Presentation Description (`.mpd`). Both describe the same
+  things — periods, adaptations, representations, segments — differently.
+- **Segments.** Historically HLS defaulted to MPEG-TS (`.ts`) while DASH used
+  fragmented MP4. The gap has narrowed: CMAF is a single fragmented-MP4 container
+  that both HLS and DASH can consume, so one encoded asset can serve both.
+- **Ecosystem.** HLS has deep support across Apple platforms, browsers, and
+  players. DASH is codec- and vendor-neutral and common in broadcast and
+  standards-driven deployments. In practice, many platforms — Cloudflare Stream
+  included — expose *both* an HLS and a DASH manifest for the same content.
+
+Terminologically, both are *adaptive bitrate streaming* approaches. The choice
+between them is usually an ecosystem decision rather than a capability decision,
+and supporting both means producing (or letting a service produce) two manifests
+that point at shared, CMAF-ready segments.
+
+## HLS vs MP4
+
+If adaptive streaming exists, why not just serve `video.mp4` directly? For many
+cases you can — a single progressive MP4 over a `<video>` tag works fine. But a
+production video platform usually does not, because a lone MP4 is a single point
+of compromise:
+
+| | MP4 (progressive) | HLS |
+| --- | --- | --- |
+| Adaptive bitrate | No | Yes |
+| Network changes | No renegotiation | Player switches renditions |
+| Startup | Depends on file/bitrate | Can start on a low rung quickly |
+| Buffering | Entire file, or a range | Short segments, bounded buffer |
+| Device differences | One size for all | Per-device rendition choice |
+| CDN caching | Whole file | Segment-level, plus playlists |
+| Seeking to a timestamp | Range request | Jump to the right segment |
+
+The defining difference is **what happens when the network changes**. An MP4
+player downloads forward; if bandwidth drops below the encoded rate, it buffers,
+and nothing can be done. An HLS player, on encountering the same dip, steps down
+to a smaller rendition for the next segment and keeps playing. MP4 optimizes for
+simplicity; HLS optimizes for resilience across the range of real network and
+device conditions. Production platforms pick HLS because their viewers are on
+that whole range.
+
+## VOD vs Live HLS
+
+The same HLS format serves two very different delivery models. The difference is
+whether the content is finished or ongoing.
+
+### VOD
+
+Video on demand is a *completed* asset. You encode and package it once, store the
+result, and every viewer plays the same finished tree of playlists and segments.
+
+```text
+Upload
+ ↓
+Encode
+ ↓
+Package
+ ↓
+Store
+ ↓
+Playback
+```
+
+For VOD, the media playlists are static: `#EXT-X-TARGETDURATION` describes a
+finished set of segments, and the playlist never changes. This is what the
+Media Pipeline SDK produces — one complete HLS package per input file.
+
+### Live
+
+Live streaming is a *continuous* asset. The source never finishes, so the
+packager cannot write a final playlist. Instead it keeps appending segments and
+rewriting the playlist to describe a sliding window of the most recent media.
+
+```text
+Camera / OBS
+ ↓
+Ingest
+ ↓
+Encode
+ ↓
+Package
+ ↓
+Continuously updated playlist
+ ↓
+Viewer
+```
+
+A live viewer fetches the playlist repeatedly. Each fetch returns the current
+window of segments, and the player keeps downloading new ones as they appear.
+That is why the CDN section stressed fresh playlist delivery for live: the
+manifest is a moving target, unlike the finished VOD manifest.
+
+The key distinction, stated plainly: **a VOD playlist represents a completed
+asset; a live playlist represents a continuously replaced window into an
+ongoing asset.** Everything else — master playlists, bitrate ladders, segment
+boundaries — works the same way.
+
+## Low-Latency HLS
+
+Standard HLS has a latency problem: the pipeline of buffering segments plus a
+sliding playlist window introduces seconds of delay between "this happened live"
+and "the viewer sees it." Part of that is inherent to segmentation — a viewer
+cannot start playing a segment until it has been fully produced and published.
+
+**Low-Latency HLS (LL-HLS)** reduces that delay. Its signature technique is
+**partial segments**: instead of waiting for an entire (say) six-second segment
+to finish, the packager publishes small sub-parts of the segment as they are
+encoded, and the player can begin downloading and playing those parts almost
+immediately. The result is live playback that trails the source by a couple of
+seconds instead of many.
+
+LL-HLS is not free, which is why it is a *choice* rather than a default:
+
+- **Tradeoffs.** Lower latency generally means shorter GOPs, more requests, and
+  tighter tolerance to jitter. You are trading some encoding efficiency and
+  robustness for speed.
+- **Compatibility.** LL-HLS requires players that understand partial segments.
+  Not every legacy player does, so you typically offer LL-HLS alongside normal
+  HLS rather than replacing it.
+
+On Cloudflare specifically, LL-HLS is a **beta** feature gated behind a Live
+Input setting. The current documentation labels low-latency HLS as beta, with
+dedicated broadcast recommendations — disabling B-frames, using a short
+2–4 second keyframe interval, and preferring the RTMP ingest endpoint. The
+low-latency manifest is reached by adding `?protocol=llhls` to the standard HLS
+manifest URL. Because it is beta, treat it as an opt-in experiment in production,
+not a guaranteed, generally-available feature.
+
+## Common HLS Problems
+
+Most HLS failures fall into a small number of categories. Here are the ones I
+reach for first when chasing "the video doesn't play right."
+
+### Video buffers frequently
+
+The player's buffer keeps draining faster than it refills. Possible causes:
+
+- bitrate too high for the viewer's actual bandwidth,
+- genuinely poor or unstable bandwidth,
+- a poorly designed bitrate ladder (gaps between rungs are too large, or the
+  lowest rung is still too high),
+- a slow origin that cannot serve segments fast enough,
+- CDN cache misses or a misconfigured CDN.
+
+### Quality switches too often
+
+The player oscillates between renditions instead of settling:
+
+- unstable bandwidth that genuinely changes every few seconds,
+- a bitrate ladder with rungs too close together, making every small fluctuation
+  a switch,
+- player ABR configuration that is too aggressive,
+- incorrect bandwidth estimates (for example, a misreported `BANDWIDTH` value in
+  the master playlist).
+
+### Video starts slowly
+
+Time-to-first-frame is dominated by a long initial segment fetch:
+
+- large initial segments or a long first GOP,
+- a slow origin,
+- poor CDN configuration (cold cache, far edge),
+- a player buffering strategy that waits for too much data before starting.
+
+### One quality level does not play
+
+Everything else works but one rung fails:
+
+- an incorrect or malformed variant playlist,
+- missing segment files for that rung,
+- invalid or unsupported codec settings for that rendition,
+- incorrect segment paths in the playlist (wrong directory, wrong extension),
+- CORS blocking the requests,
+- storage that is inaccessible or credentials that only cover part of the tree.
+
+### HLS works locally but not in production
+
+The classic "works on my machine" scenario. Things that differ in production:
+
+- **HTTPS** — mixed-content rules block HTTP segments on an HTTPS page.
+- **CORS** — segments served from another origin need correct CORS headers on
+  every response.
+- **Signed URLs** — private objects need signed links *throughout* the chain,
+  not just on the master playlist.
+- **CDN** — cache behavior and TTLs differ from local serving.
+- **Storage permissions** — the segment objects must be readable by the CDN or
+  viewer and not just by your uploader.
+- **MIME types** — `.m3u8` and `.ts`/`.m4s` must be served with the right content
+  types or some players/strict CDNs reject them.
+- **URL paths** — relative segment URLs resolve against the playlist URL, so a
+  difference in the public path prefix breaks every reference.
+
+### Production HLS Checklist
+
+A compact checklist to run on an HLS deployment:
+
+- [ ] Multiple quality levels are actually being produced.
+- [ ] The bitrate ladder has sensible, not-too-large gaps between rungs.
+- [ ] Keyframes (GOPs) are aligned across all renditions.
+- [ ] The master playlist is valid and lists every rendition.
+- [ ] Every variant playlist is valid and references real segment files.
+- [ ] Segment paths resolve correctly from the playlist's location.
+- [ ] Playback is served over HTTPS.
+- [ ] A CDN sits in front of the origin, with correct segment TTLs.
+- [ ] MIME types are correct for `.m3u8` and segment containers.
+- [ ] CORS is configured when cross-origin playback is used.
+- [ ] Private content uses signed/authorized playback across the whole chain.
+- [ ] Monitoring exists for buffering, errors, and origin load.
+- [ ] Player and pipeline error handling is defined.
+- [ ] Storage lifecycle (expiry, cleanup) is handled.
+
+## Media Pipeline SDK: Why I Built It
+
+Every project that needs video eventually runs into the same wall. You do not
+want to hand-write this every time:
+
+```text
+FFmpeg
++
+Transcoding
++
+HLS Packaging
++
+Playlist Management
++
+Cloud Upload
++
+Signed Playback
+```
+
+Individually, none of those steps is hard. Together they are a pile of
+edge cases: resolution and bitrate tables, keyframe settings, per-run output
+folders, relative playlist references, retry-and-backoff upload logic, and — the
+most error-prone part — rewriting playlists so authentication actually propagates
+to every segment. That is a lot of fiddly, easy-to-get-subtly-wrong glue before
+you ever get to the part your application actually cares about.
+
+The Media Pipeline SDK exists to collapse that glue into three calls:
+`processLocal`, `processCloudinary`, and `processS3`. You express the storage
+target and the resolution ladder; the SDK owns the FFmpeg invocation, the HLS
+packaging, the predictable output layout, and the delivery (including the signed
+S3 playback chain). It does not force you into an opaque hosted service — the
+generated output is plain HLS on disk, inspectable and portable — but it removes
+the repetitive part.
+
+The engineering lesson I keep coming back to is this:
+
+> Infrastructure should remove repetitive complexity while preserving enough
+> control for real applications.
+
+A tool that hides everything stops being useful the moment your requirements
+diverge from its defaults. A tool that makes you rebuild everything is just a
+cheat sheet. The useful middle is a pipeline that handles the mechanical work —
+transcode, package, deliver — and still hands you back the actual artifacts and
+URLs, so you can put them behind your own player, CDN, and access rules. That is
+the design line this SDK tries to walk.
+
+## Final Architecture Diagram
+
+Putting the whole picture together — HLS pipeline on the inside, delivery on the
+outside:
+
+```text
+                    MEDIA PIPELINE SDK
+
+                         Source Video
+                              |
+                              v
+                       +-------------+
+                       |    FFmpeg   |
+                       | Transcoding |
+                       +-------------+
+                              |
+              +---------------+---------------+
+              |               |               |
+              v               v               v
+           1080p            720p            480p
+              |               |               |
+              +---------------+---------------+
+                              |
+                              v
+                       HLS Packaging
+                              |
+                    +---------+---------+
+                    |                   |
+                    v                   v
+               master.m3u8        Media Segments
+                    |
+          +---------+----------+
+          |                    |
+          v                    v
+      Cloudinary              S3
+          |                    |
+          +---------+----------+
+                    |
+                    v
+                Playback
+```
+
+Flow in words: a source video enters, FFmpeg transcodes it into the requested
+renditions, HLS packaging turns those renditions into a master playlist plus
+segment files, and the delivery layer either leaves the package on local disk,
+uploads it to Cloudinary, or uploads it to S3 with signed playback — ending at
+the player.
+
+## References / Further Reading
+
+Primary sources used for the Cloudflare sections and for the HLS spec itself:
+
+- [Cloudflare Stream — overview](https://developers.cloudflare.com/stream/)
+- [Cloudflare Stream — upload videos](https://developers.cloudflare.com/stream/uploading-videos/)
+- [Cloudflare Stream — use your own player (HLS/DASH manifests)](https://developers.cloudflare.com/stream/viewing-videos/using-own-player/)
+- [Cloudflare Stream — secure your Stream (signed URLs)](https://developers.cloudflare.com/stream/viewing-videos/securing-your-stream/)
+- [Cloudflare Stream — stream live video](https://developers.cloudflare.com/stream/stream-live/)
+- [Cloudflare Stream — start a live stream](https://developers.cloudflare.com/stream/stream-live/start-stream-live/)
+- [Cloudflare Stream — watch a live stream](https://developers.cloudflare.com/stream/stream-live/watch-live-stream/)
+- [Apple Developer — HTTP Live Streaming](https://developer.apple.com/streaming/)
+- [RFC 8216 — HTTP Live Streaming](https://datatracker.ietf.org/doc/html/rfc8216)
+- [Media Pipeline SDK on GitHub](https://github.com/kishanghosh090/Media-Pipeline-sdk)

@@ -7,6 +7,7 @@ const { hasSidebar, entry } = Astro.locals.starlightRoute;
 const sections = [
   { label: "Docs", href: "/", isActive: entry.id === "index" || entry.id.startsWith("getting-started") },
   { label: "Guides", href: "/guides/local-processing/", isActive: entry.id.startsWith("guides") },
+  { label: "Articles", href: "/articals/hls/", isActive: entry.id.startsWith("articals") },
   { label: "Reference", href: "/reference/api/", isActive: entry.id.startsWith("reference") },
 ];
 ---

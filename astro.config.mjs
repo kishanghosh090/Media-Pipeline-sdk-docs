@@ -38,6 +38,15 @@ export default defineConfig({
           ],
         },
         {
+          label: "Articles",
+          items: [
+            {
+              label: "HTTP Live Streaming (HLS): From Video Files to Adaptive Streaming",
+              slug: "articals/hls",
+            },
+          ],
+        },
+        {
           label: "Core",
           items: [
             { label: "Local Processing", slug: "guides/local-processing" },
